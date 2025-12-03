@@ -24,8 +24,6 @@ body { background-color: var(--bg); color: var(--text-main); padding-bottom: cal
     display: flex; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 h1 { font-size: 1.5rem; font-weight: 700; }
-h2 { font-size: 1.2rem; margin-bottom: 15px; }
-h3 { font-size: 1rem; margin-bottom: 5px; }
 
 /* Layout & Cards */
 #main-container { padding: 20px; max-width: 600px; margin: 0 auto; }
@@ -36,7 +34,9 @@ h3 { font-size: 1rem; margin-bottom: 5px; }
     box-shadow: var(--shadow);
     margin-bottom: 20px;
     position: relative;
+    transition: transform 0.1s;
 }
+.card.clickable:active { transform: scale(0.98); background: #f9fafb; }
 .toast {
     background: #e0f2fe; color: #075985;
     padding: 10px; border-radius: 8px; margin-bottom: 15px;
@@ -49,6 +49,38 @@ h3 { font-size: 1rem; margin-bottom: 5px; }
     margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 1px;
     position: sticky; top: 75px; z-index: 90; 
     background: var(--bg); padding: 5px 0;
+}
+
+/* Charts */
+.chart-container {
+    margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;
+    height: 150px; width: 100%; display: none;
+}
+.card.expanded .chart-container { display: block; }
+.chart-svg { width: 100%; height: 100%; overflow: visible; }
+.chart-line { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.chart-dot { fill: white; stroke: var(--primary); stroke-width: 2; }
+.chart-label { font-size: 10px; fill: var(--text-muted); }
+
+/* History Manager */
+.history-item { 
+    display: flex; justify-content: space-between; align-items: center; 
+    padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #fff;
+}
+.history-info { display: flex; flex-direction: column; }
+.history-actions { display: flex; gap: 8px; }
+.btn-sm { padding: 6px 10px; font-size: 0.8rem; border-radius: 6px; }
+.btn-danger { background: var(--danger); color: white; }
+
+/* Modal */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-content {
+    background: white; width: 90%; max-width: 400px;
+    padding: 20px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
 }
 
 /* Dashboard Summaries */
