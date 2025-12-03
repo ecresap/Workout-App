@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v6
- * Updates: Categorized Library, Swap, History, Timer, Consistency Graph
+ * StrengthOS - Complete Mobile PWA v7
+ * Updates: Charts, History Edit/Delete, Categorized Library
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -74,6 +74,14 @@ const Store = {
         this.save();
         localStorage.removeItem(DRAFT_KEY);
     },
+    deleteSession(index) {
+        this.data.history.splice(index, 1);
+        this.save();
+    },
+    updateSessionDate(index, newDate) {
+        this.data.history[index].date = newDate;
+        this.save();
+    },
     saveDraft(planData) {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(planData));
     },
@@ -103,19 +111,26 @@ const Coach = {
         return "New Exercise";
     },
 
+    getChartData(exId) {
+        // Collect Estimated 1RM History (Weight * (1 + reps/30))
+        return Store.data.history
+            .map(s => {
+                const ex = s.exercises.find(e => e.id === exId);
+                if (!ex) return null;
+                const best = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0});
+                // E1RM Formula
+                const e1rm = best.weight * (1 + (best.reps / 30));
+                return { date: s.date, val: Math.round(e1rm) };
+            })
+            .filter(x => x !== null)
+            .slice(-10); // Last 10 points
+    },
+
     getAlternative(exId) {
         const current = Store.data.exercises.find(e => e.id === exId);
         if(!current) return null;
-        
-        const alts = Store.data.exercises.filter(e => 
-            e.muscle === current.muscle && 
-            e.id !== exId &&
-            (!Store.data.profile.wristPain || e.joint !== 'wrist')
-        );
-        
-        if (alts.length > 0) {
-            return alts[Math.floor(Math.random() * alts.length)];
-        }
+        const alts = Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
+        if (alts.length > 0) return alts[Math.floor(Math.random() * alts.length)];
         return null;
     },
 
@@ -123,13 +138,7 @@ const Coach = {
         const { frequency, wristPain } = Store.data.profile;
         const last = Store.data.history[Store.data.history.length - 1];
         
-        let type = 'full';
-        
-        if (forcedType) {
-            type = forcedType;
-        } else if (frequency >= 3) {
-            type = (last && last.type === 'upper') ? 'lower' : 'upper';
-        }
+        let type = forcedType ? forcedType : (frequency >= 3 ? ((last && last.type === 'upper') ? 'lower' : 'upper') : 'full');
 
         let muscles = [];
         if (type === 'upper') muscles = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'core'];
@@ -139,23 +148,14 @@ const Coach = {
         let selected = [];
         muscles.forEach(m => {
             const pool = Store.data.exercises.filter(e => e.muscle === m && (!wristPain || e.joint !== 'wrist'));
-            if (pool.length > 0) {
-                const ex = pool[Math.floor(Math.random() * pool.length)];
-                selected.push(ex);
-            }
+            if (pool.length > 0) selected.push(pool[Math.floor(Math.random() * pool.length)]);
         });
 
         return {
             type: type,
             exercises: selected.map(ex => {
                 const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' };
-                return {
-                    ...ex,
-                    targetWeight: prog.weight,
-                    targetReps: prog.nextReps,
-                    sets: 3,
-                    note: null
-                };
+                return { ...ex, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: null };
             })
         };
     },
@@ -165,9 +165,7 @@ const Coach = {
             const lastSet = res.sets[res.sets.length - 1];
             const current = Store.data.progression[res.id] || { weight: 10, nextReps: '8-12' };
             let newWeight = current.weight;
-            if (lastSet.rir >= 3) {
-                newWeight += (res.type === 'dumbbell' ? 5 : 0);
-            }
+            if (lastSet.rir >= 3) newWeight += (res.type === 'dumbbell' ? 5 : 0);
             Store.data.progression[res.id] = { weight: newWeight, nextReps: '8-12' };
         });
     }
@@ -182,7 +180,6 @@ const UI = {
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
         
-        // Add Timer UI to body
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         document.body.insertAdjacentHTML('beforeend', timerHtml);
 
@@ -208,6 +205,7 @@ const UI = {
         if(view === 'settings') this.renderSettings();
     },
 
+    // --- DASHBOARD ---
     renderDash() {
         this.pageTitle.innerText = 'Dashboard';
         const h = Store.data.history;
@@ -227,7 +225,6 @@ const UI = {
             const dateStr = date.toLocaleDateString();
             const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); 
             const trained = h.some(session => new Date(session.date).toLocaleDateString() === dateStr);
-            
             return `
                 <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;">
                     <div style="width:100%; background:${trained ? 'var(--primary)' : '#e2e8f0'}; height:${trained ? '100%' : '20%'}; border-radius:4px;"></div>
@@ -253,25 +250,18 @@ const UI = {
             </div>
             <div class="card">
                 <h2>Last 7 Days</h2>
-                <div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">
-                    ${bars}
-                </div>
+                <div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div>
             </div>
         `;
     },
 
+    // --- WORKOUT ---
     renderWorkoutIntro() {
         this.pageTitle.innerText = 'Workout';
         const draft = Store.getDraft();
-        
         const last = Store.data.history[Store.data.history.length - 1];
-        let primaryType = 'upper';
-        let altType = 'lower';
-
-        if (last && last.type === 'upper') {
-            primaryType = 'lower';
-            altType = 'upper';
-        }
+        let primaryType = (last && last.type === 'upper') ? 'lower' : 'upper';
+        let altType = (primaryType === 'upper') ? 'lower' : 'upper';
 
         if (draft) {
             this.container.innerHTML = `
@@ -301,83 +291,40 @@ const UI = {
         }
     },
 
-    clearDraft() {
-        localStorage.removeItem(DRAFT_KEY);
-        this.renderWorkoutIntro();
-    },
-
-    resumeSession() {
-        const draft = Store.getDraft();
-        this.currentPlan = draft.plan; 
-        this.currentStartTime = draft.startTime;
-        this.currentType = draft.type;
-        this.renderActiveSession(true);
-    },
-
-    startNewSession(type) {
-        const generated = Coach.generateWorkout(type);
-        this.currentPlan = generated.exercises;
-        this.currentType = generated.type;
-        this.currentStartTime = new Date().toISOString();
-        this.renderActiveSession(false);
-    },
+    clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
+    resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
+    startNewSession(type) { const g = Coach.generateWorkout(type); this.currentPlan = g.exercises; this.currentType = g.type; this.currentStartTime = new Date().toISOString(); this.renderActiveSession(false); },
 
     renderActiveSession(isResume) {
         const draft = isResume ? Store.getDraft() : null;
-
-        const legend = `
-            <div class="rir-legend-box">
-                <span class="rir-legend-title">RIR Scale (Reps In Reserve)</span>
-                0 = Failure | 1 = Hard | 2 = Sweet Spot | 3+ = Easy
-            </div>
-        `;
-
+        const legend = `<div class="rir-legend-box"><span class="rir-legend-title">RIR Scale</span>0 = Failure | 1 = Hard | 2 = Sweet Spot | 3+ = Easy</div>`;
         const exercisesHtml = this.currentPlan.map((ex, i) => `
             <div class="card" id="card-${i}">
                 <button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>
                 ${ex.note ? `<div class="toast">${ex.note}</div>` : ''}
-                
                 <h3>${ex.name}</h3>
                 <div class="history-text">${Coach.getHistoryString(ex.id)}</div>
-                
                 <p style="color:var(--text-muted); margin-bottom:10px;">Target: ${ex.targetWeight} lbs | ${ex.targetReps} reps</p>
                 ${[1,2,3].map(s => {
                     const savedSet = draft?.inputs?.[`reps-${i}-${s}`];
                     const savedRir = draft?.inputs?.[`rir-${i}-${s}`] || 2;
-                    
                     return `
                     <div class="set-row">
                         <span style="font-size:0.8rem; color:#888">Set ${s}</span>
                         <input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${savedSet || ''}" onchange="UI.scrapeAndSaveDraft()">
-                        
                         <div class="rir-container">
-                            <div class="rir-header-row">
-                                <span class="rir-label">F</span>
-                                <span class="rir-label">H</span>
-                                <span class="rir-label">SP</span>
-                                <span class="rir-label">E</span>
-                            </div>
+                            <div class="rir-header-row"><span class="rir-label">F</span><span class="rir-label">H</span><span class="rir-label">SP</span><span class="rir-label">E</span></div>
                             <div class="rir-selector" id="rir-box-${i}-${s}">
-                                ${[0,1,2,3].map(r => `
-                                    <div class="rir-btn ${savedRir == r ? 'selected' : ''}" 
-                                         onclick="UI.setRir(${i},${s},${r})">
-                                         ${r}${r==3?'+':''}
-                                    </div>
-                                `).join('')}
+                                ${[0,1,2,3].map(r => `<div class="rir-btn ${savedRir == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}
                             </div>
                         </div>
                         <input type="hidden" id="rir-${i}-${s}" value="${savedRir}">
-                    </div>
-                `}).join('')}
+                    </div>`;
+                }).join('')}
             </div>
         `).join('');
         
-        this.container.innerHTML = `
-            ${legend}
-            ${exercisesHtml}
-            <button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button>
-            <button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>
-        `;
+        this.container.innerHTML = `${legend}${exercisesHtml}<button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button><button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>`;
         window.scrollTo(0,0);
     },
 
@@ -385,29 +332,17 @@ const UI = {
         this.scrapeAndSaveDraft();
         const oldEx = this.currentPlan[index];
         const newEx = Coach.getAlternative(oldEx.id);
-        
-        if (newEx) {
-            if(confirm(`Swap ${oldEx.name} for ${newEx.name}?`)) {
-                const prog = Store.data.progression[newEx.id] || { weight: 10, nextReps: '8-12' };
-                this.currentPlan[index] = {
-                    ...newEx,
-                    targetWeight: prog.weight,
-                    targetReps: prog.nextReps,
-                    sets: 3,
-                    note: 'Swapped in'
-                };
-                this.renderActiveSession(true);
-            }
-        } else {
-            alert("No alternative exercises available for this muscle group.");
-        }
+        if (newEx && confirm(`Swap ${oldEx.name} for ${newEx.name}?`)) {
+            const prog = Store.data.progression[newEx.id] || { weight: 10, nextReps: '8-12' };
+            this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped in' };
+            this.renderActiveSession(true);
+        } else { alert("No alternative available."); }
     },
 
     setRir(exIdx, setNum, val) {
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected'));
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected');
         document.getElementById(`rir-${exIdx}-${setNum}`).value = val;
-        
         this.scrapeAndSaveDraft();
         this.startTimer(120); 
     },
@@ -416,96 +351,58 @@ const UI = {
         const overlay = document.getElementById('timer-overlay');
         const display = document.getElementById('timer-val');
         overlay.classList.add('active');
-        
         if (this.timerInterval) clearInterval(this.timerInterval);
-        
         let rem = seconds;
         const tick = () => {
             const m = Math.floor(rem / 60).toString().padStart(2,'0');
             const s = (rem % 60).toString().padStart(2,'0');
             display.innerText = `${m}:${s}`;
-            if (rem <= 0) {
-                clearInterval(this.timerInterval);
-                display.innerText = "Ready!";
-                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-            }
+            if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); }
             rem--;
         };
         tick();
         this.timerInterval = setInterval(tick, 1000);
     },
 
-    stopTimer() {
-        clearInterval(this.timerInterval);
-        document.getElementById('timer-overlay').classList.remove('active');
-    },
-
+    stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
     scrapeAndSaveDraft() {
         const inputs = {};
-        document.querySelectorAll('input').forEach(inp => {
-            if (inp.id) inputs[inp.id] = inp.value;
-        });
-        
-        const draftData = {
-            startTime: this.currentStartTime,
-            plan: this.currentPlan,
-            type: this.currentType,
-            inputs: inputs
-        };
-        Store.saveDraft(draftData);
+        document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; });
+        Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs });
     },
-
-    pauseSession() {
-        this.scrapeAndSaveDraft();
-        this.nav('workout'); 
-    },
-
+    pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
-        
         const results = {
             date: new Date().toISOString(),
             type: this.currentType,
             exercises: this.currentPlan.map((ex, i) => ({
-                id: ex.id,
-                type: ex.type,
-                sets: [1,2,3].map(s => ({
-                    reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0,
-                    rir: Number(document.getElementById(`rir-${i}-${s}`).value),
-                    weight: ex.targetWeight
-                }))
+                id: ex.id, type: ex.type, sets: [1,2,3].map(s => ({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value), weight: ex.targetWeight }))
             }))
         };
-
         Store.logSession(results);
         this.stopTimer();
-        alert("Great job! Progression updated.");
+        alert("Great job!");
         this.nav('dashboard');
     },
 
+    // --- LIBRARY & CHARTS ---
     renderLib() {
         this.pageTitle.innerText = 'Exercise Library';
-        const groups = {
-            'Chest': ['chest'],
-            'Back': ['back'],
-            'Shoulders': ['shoulders'],
-            'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'],
-            'Arms': ['biceps', 'triceps', 'arms'],
-            'Core': ['core']
-        };
+        const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'], 'Arms': ['biceps', 'triceps', 'arms'], 'Core': ['core'] };
 
-        let html = '';
+        let html = '<p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Tap an exercise to view progress.</p>';
         for (const [category, muscles] of Object.entries(groups)) {
             const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle));
             if (exercises.length > 0) {
                 html += `<h3 class="lib-header">${category}</h3>`;
                 html += exercises.map(e => `
-                    <div class="card">
+                    <div class="card clickable" onclick="UI.toggleChart(this, '${e.id}')">
                         <div style="display:flex; justify-content:space-between;">
                             <strong>${e.name}</strong>
                             <span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span>
                         </div>
-                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">${e.pattern} • ${e.joint} dominant</div>
+                        <div class="chart-container" id="chart-${e.id}"></div>
                     </div>
                 `).join('');
             }
@@ -513,47 +410,121 @@ const UI = {
         this.container.innerHTML = html;
     },
 
+    toggleChart(card, exId) {
+        const container = card.querySelector('.chart-container');
+        if (card.classList.contains('expanded')) {
+            card.classList.remove('expanded');
+        } else {
+            document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
+            card.classList.add('expanded');
+            this.renderChart(exId, container);
+        }
+    },
+
+    renderChart(exId, container) {
+        const data = Coach.getChartData(exId);
+        if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-top:40px; color:#888;">Not enough data yet.</p>'; return; }
+        
+        // Simple SVG Line Chart logic
+        const h = 150, w = container.offsetWidth || 300;
+        const vals = data.map(d => d.val);
+        const min = Math.min(...vals) * 0.9;
+        const max = Math.max(...vals) * 1.1;
+        const range = max - min;
+        
+        const points = data.map((d, i) => {
+            const x = (i / (data.length - 1)) * w;
+            const y = h - ((d.val - min) / range) * h;
+            return `${x},${y}`;
+        }).join(' ');
+
+        container.innerHTML = `
+            <svg class="chart-svg" viewBox="0 0 ${w} ${h}">
+                <polyline class="chart-line" points="${points}" />
+                ${data.map((d, i) => {
+                    const x = (i / (data.length - 1)) * w;
+                    const y = h - ((d.val - min) / range) * h;
+                    return `<circle cx="${x}" cy="${y}" r="4" class="chart-dot" />
+                            <text x="${x}" y="${y-10}" text-anchor="middle" class="chart-label">${d.val}</text>`;
+                }).join('')}
+            </svg>
+        `;
+    },
+
+    // --- SETTINGS & HISTORY MANAGER ---
     renderSettings() {
         this.pageTitle.innerText = 'Settings';
         const p = Store.data.profile;
         this.container.innerHTML = `
             <div class="card">
-                <label>Days Per Week</label>
-                <select id="s-freq">
-                    <option value="2" ${p.frequency==2?'selected':''}>2 Days</option>
-                    <option value="3" ${p.frequency==3?'selected':''}>3 Days</option>
-                    <option value="4" ${p.frequency==4?'selected':''}>4 Days</option>
-                </select>
-                <label>Emphasis</label>
-                <select id="s-emph">
-                    <option value="upper" ${p.emphasis=='upper'?'selected':''}>Upper Body</option>
-                    <option value="lower" ${p.emphasis=='lower'?'selected':''}>Lower Body</option>
-                </select>
-                <div style="margin-top:10px;">
-                    <input type="checkbox" id="s-wrist" style="width:auto" ${p.wristPain?'checked':''}>
-                    <label for="s-wrist">I have wrist pain (Avoid heavy wrist loads)</label>
-                </div>
-                <button class="btn-primary" style="margin-top:15px" onclick="UI.saveSet()">Save Profile</button>
+                <h2>Account</h2>
+                <button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button>
             </div>
             <div class="card">
-                <button class="btn-secondary" onclick="UI.export()">Export Data</button>
+                <label>Days Per Week</label>
+                <select id="s-freq"><option value="2" ${p.frequency==2?'selected':''}>2 Days</option><option value="3" ${p.frequency==3?'selected':''}>3 Days</option><option value="4" ${p.frequency==4?'selected':''}>4 Days</option></select>
+                <label>Emphasis</label>
+                <select id="s-emph"><option value="upper" ${p.emphasis=='upper'?'selected':''}>Upper Body</option><option value="lower" ${p.emphasis=='lower'?'selected':''}>Lower Body</option></select>
+                <button class="btn-primary" style="margin-top:15px" onclick="UI.saveSet()">Save Profile</button>
             </div>
+            <div class="card"><button class="btn-secondary" onclick="UI.export()">Export Data</button></div>
         `;
+    },
+
+    renderHistoryManager() {
+        this.pageTitle.innerText = 'History Manager';
+        const history = Store.data.history;
+        // Get last 3 (reversed)
+        const recent = history.map((h, i) => ({...h, origIndex: i})).reverse().slice(0, 3);
+        
+        if (recent.length === 0) {
+            this.container.innerHTML = '<div class="card"><p>No history found.</p><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back</button></div>';
+            return;
+        }
+
+        const html = recent.map(item => `
+            <div class="history-item">
+                <div class="history-info">
+                    <strong>${new Date(item.date).toLocaleDateString()}</strong>
+                    <span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span>
+                </div>
+                <div class="history-actions">
+                    <button class="btn-sm" onclick="UI.editDate(${item.origIndex})">Edit Date</button>
+                    <button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
+        this.container.innerHTML = `
+            <div style="margin-bottom:20px;">${html}</div>
+            <button class="btn-secondary" onclick="UI.nav(\'settings\')">Back to Settings</button>
+        `;
+    },
+
+    deleteHistory(index) {
+        if(confirm("Are you sure you want to delete this workout permanently?")) {
+            Store.deleteSession(index);
+            this.renderHistoryManager();
+        }
+    },
+
+    editDate(index) {
+        const newDate = prompt("Enter new date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (newDate) {
+            Store.updateSessionDate(index, new Date(newDate).toISOString());
+            this.renderHistoryManager();
+        }
     },
 
     saveSet() {
         Store.data.profile.frequency = Number(document.getElementById('s-freq').value);
         Store.data.profile.emphasis = document.getElementById('s-emph').value;
-        Store.data.profile.wristPain = document.getElementById('s-wrist').checked;
         Store.save();
         alert("Saved!");
     },
-
     export() {
         const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(Store.data));
-        const a = document.createElement('a');
-        a.href = data; a.download = 'strengthos_backup.json';
-        document.body.appendChild(a); a.click(); a.remove();
+        const a = document.createElement('a'); a.href = data; a.download = 'strengthos_backup.json'; document.body.appendChild(a); a.click(); a.remove();
     }
 };
 
