@@ -1,9 +1,9 @@
 /**
- * StrengthOS - Complete Mobile PWA v8
- * Updates: Weight Override, Full History Editing, Progression Fixes
+ * StrengthOS - Complete Mobile PWA v9
+ * Updates: Version bump for PWA Push
  */
 
-const STORAGE_KEY = 'strengthOS_data_v3';
+const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
 
 // --- 1. EXERCISE LIBRARY ---
