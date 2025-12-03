@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v12
- * Updates: Micro-loading (2.5lbs) for small muscle groups
+ * StrengthOS - Complete Mobile PWA v13
+ * Updates: Aggressive PWA Update Logic (Service Worker)
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -209,9 +209,6 @@ const Coach = {
             if (reps >= 10 && lastSet.rir >= 3) {
                 // NEW: Micro-loading logic
                 const smallMuscles = ['biceps', 'triceps', 'shoulders', 'calves', 'core'];
-                // Check if this exercise hits a small muscle
-                // We need to look up the muscle group from the exercise ID or use the logged data if we stored muscle there
-                // Since 'res' here is from history, we look up the base exercise definition
                 const exDef = Store.data.exercises.find(e => e.id === res.id);
                 const isSmall = exDef ? smallMuscles.includes(exDef.muscle) : false;
 
