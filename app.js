@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v5
- * Updates: Swap, History Text, Rest Timer, Smart Buttons, Real Consistency
+ * StrengthOS - Complete Mobile PWA v6
+ * Updates: Categorized Library, Swap, History, Timer, Consistency Graph
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -208,7 +208,6 @@ const UI = {
         if(view === 'settings') this.renderSettings();
     },
 
-    // --- DASHBOARD WITH CONSISTENCY ---
     renderDash() {
         this.pageTitle.innerText = 'Dashboard';
         const h = Store.data.history;
@@ -218,7 +217,6 @@ const UI = {
         const lastLow = [...h].reverse().find(s => s.type === 'lower');
         const formatDate = (d) => d ? new Date(d).toLocaleDateString() : 'None';
 
-        // REAL CONSISTENCY GRAPH
         const last7Days = [...Array(7)].map((_, i) => {
             const d = new Date();
             d.setDate(d.getDate() - (6 - i));
@@ -262,12 +260,10 @@ const UI = {
         `;
     },
 
-    // --- WORKOUT INTRO WITH SMART BUTTONS ---
     renderWorkoutIntro() {
         this.pageTitle.innerText = 'Workout';
         const draft = Store.getDraft();
         
-        // Logic for Suggestion
         const last = Store.data.history[Store.data.history.length - 1];
         let primaryType = 'upper';
         let altType = 'lower';
@@ -293,11 +289,9 @@ const UI = {
                 <div style="padding:20px 0;">
                     <div class="card" style="text-align:center; padding: 30px 20px;">
                         <div style="font-size:3rem; margin-bottom:10px;">💪</div>
-                        
                         <button class="btn-primary" style="margin-bottom: 15px;" onclick="UI.startNewSession('${primaryType}')">
                             Today's Workout: ${primaryType.toUpperCase()}
                         </button>
-                        
                         <button class="btn-secondary" style="font-size:0.9rem; padding: 10px;" onclick="UI.startNewSession('${altType}')">
                             Alternative: ${altType.charAt(0).toUpperCase() + altType.slice(1)}
                         </button>
@@ -387,18 +381,13 @@ const UI = {
         window.scrollTo(0,0);
     },
 
-    // --- LOGIC: SWAP, TIMER, SAVE ---
-
     swapExercise(index) {
-        // Save current input first
         this.scrapeAndSaveDraft();
-        
         const oldEx = this.currentPlan[index];
         const newEx = Coach.getAlternative(oldEx.id);
         
         if (newEx) {
             if(confirm(`Swap ${oldEx.name} for ${newEx.name}?`)) {
-                // Update plan
                 const prog = Store.data.progression[newEx.id] || { weight: 10, nextReps: '8-12' };
                 this.currentPlan[index] = {
                     ...newEx,
@@ -407,7 +396,6 @@ const UI = {
                     sets: 3,
                     note: 'Swapped in'
                 };
-                // Force re-render with isResume=true to load inputs for OTHER exercises
                 this.renderActiveSession(true);
             }
         } else {
@@ -421,7 +409,7 @@ const UI = {
         document.getElementById(`rir-${exIdx}-${setNum}`).value = val;
         
         this.scrapeAndSaveDraft();
-        this.startTimer(120); // 2 min rest
+        this.startTimer(120); 
     },
 
     startTimer(seconds) {
@@ -439,7 +427,6 @@ const UI = {
             if (rem <= 0) {
                 clearInterval(this.timerInterval);
                 display.innerText = "Ready!";
-                // Vibrate if on mobile
                 if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
             }
             rem--;
@@ -498,15 +485,32 @@ const UI = {
 
     renderLib() {
         this.pageTitle.innerText = 'Exercise Library';
-        this.container.innerHTML = Store.data.exercises.map(e => `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between;">
-                    <strong>${e.name}</strong>
-                    <span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span>
-                </div>
-                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">${e.pattern} • ${e.joint} dominant</div>
-            </div>
-        `).join('');
+        const groups = {
+            'Chest': ['chest'],
+            'Back': ['back'],
+            'Shoulders': ['shoulders'],
+            'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'],
+            'Arms': ['biceps', 'triceps', 'arms'],
+            'Core': ['core']
+        };
+
+        let html = '';
+        for (const [category, muscles] of Object.entries(groups)) {
+            const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle));
+            if (exercises.length > 0) {
+                html += `<h3 class="lib-header">${category}</h3>`;
+                html += exercises.map(e => `
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between;">
+                            <strong>${e.name}</strong>
+                            <span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span>
+                        </div>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">${e.pattern} • ${e.joint} dominant</div>
+                    </div>
+                `).join('');
+            }
+        }
+        this.container.innerHTML = html;
     },
 
     renderSettings() {
