@@ -1,7 +1,7 @@
 :root {
     --primary: #2563eb; 
     --accent: #10b981; 
-    --warning: #f59e0b; /* New for Pause button */
+    --warning: #f59e0b;
     --bg: #f4f6f8;
     --card-bg: #ffffff;
     --text-main: #1f2937;
@@ -13,7 +13,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-body { background-color: var(--bg); color: var(--text-main); padding-bottom: calc(var(--nav-height) + 20px); }
+body { background-color: var(--bg); color: var(--text-main); padding-bottom: calc(var(--nav-height) + 80px); /* Extra pad for timer */ }
 
 /* Header */
 .app-header {
@@ -35,11 +35,12 @@ h3 { font-size: 1rem; margin-bottom: 5px; }
     padding: 20px;
     box-shadow: var(--shadow);
     margin-bottom: 20px;
+    position: relative;
 }
 .toast {
     background: #e0f2fe; color: #075985;
-    padding: 15px; border-radius: 12px; margin-bottom: 20px;
-    font-size: 0.9rem; line-height: 1.4; border-left: 4px solid var(--primary);
+    padding: 10px; border-radius: 8px; margin-bottom: 15px;
+    font-size: 0.85rem; border-left: 4px solid var(--primary);
 }
 
 /* Dashboard Summaries */
@@ -48,12 +49,24 @@ h3 { font-size: 1rem; margin-bottom: 5px; }
 .summary-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .summary-val { font-size: 0.9rem; font-weight: 600; margin-top: 4px; }
 
-/* Buttons & Inputs */
+/* Buttons */
 button { border: none; outline: none; cursor: pointer; font-size: 1rem; font-weight: 600; border-radius: 12px; transition: 0.2s; }
 .btn-primary { background: var(--primary); color: white; padding: 16px; width: 100%; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); }
 .btn-primary:active { transform: scale(0.98); }
 .btn-secondary { background: #e5e7eb; color: var(--text-main); padding: 10px 15px; width: 100%; margin-top: 10px; }
 .btn-warning { background: var(--warning); color: white; padding: 12px; width: 100%; margin-top: 10px; }
+
+/* Swap Button */
+.swap-btn {
+    position: absolute; top: 20px; right: 20px;
+    background: #f3f4f6; color: var(--text-muted);
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+}
+
+/* History Text */
+.history-text { font-size: 0.8rem; color: var(--primary); margin-bottom: 15px; font-weight: 500; }
 
 input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #d1d5db; margin-bottom: 10px; font-size: 1rem; background: #fff; }
 
@@ -79,7 +92,7 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 /* Set Rows */
 .set-row { display: grid; grid-template-columns: 0.5fr 0.8fr 2fr; gap: 10px; margin-bottom: 12px; align-items: flex-end; }
 
-/* RIR Labels above buttons */
+/* RIR Labels */
 .rir-container { display: flex; flex-direction: column; width: 100%; }
 .rir-header-row { display: flex; justify-content: space-between; margin-bottom: 2px; padding: 0 2px; }
 .rir-label { font-size: 0.6rem; font-weight: bold; color: var(--text-muted); width: 25%; text-align: center; }
@@ -87,3 +100,15 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 .rir-selector { display: flex; gap: 4px; width: 100%; }
 .rir-btn { flex: 1; padding: 10px 0; font-size: 0.85rem; background: #f3f4f6; border-radius: 6px; text-align: center; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
 .rir-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); font-weight: bold; }
+
+/* Timer Overlay */
+#timer-overlay {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--text-main); color: white;
+    padding: 10px 20px; border-radius: 30px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    display: none; align-items: center; gap: 10px; z-index: 200;
+    font-weight: bold; font-family: monospace; font-size: 1.2rem;
+}
+#timer-overlay.active { display: flex; }
+.timer-close { font-size: 0.8rem; background: #4b5563; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 10px; }
