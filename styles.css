@@ -1,6 +1,7 @@
 :root {
     --primary: #2563eb; 
     --accent: #10b981; 
+    --warning: #f59e0b; /* New for Pause button */
     --bg: #f4f6f8;
     --card-bg: #ffffff;
     --text-main: #1f2937;
@@ -41,11 +42,18 @@ h3 { font-size: 1rem; margin-bottom: 5px; }
     font-size: 0.9rem; line-height: 1.4; border-left: 4px solid var(--primary);
 }
 
+/* Dashboard Summaries */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.summary-box { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.summary-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.summary-val { font-size: 0.9rem; font-weight: 600; margin-top: 4px; }
+
 /* Buttons & Inputs */
 button { border: none; outline: none; cursor: pointer; font-size: 1rem; font-weight: 600; border-radius: 12px; transition: 0.2s; }
 .btn-primary { background: var(--primary); color: white; padding: 16px; width: 100%; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); }
 .btn-primary:active { transform: scale(0.98); }
 .btn-secondary { background: #e5e7eb; color: var(--text-main); padding: 10px 15px; width: 100%; margin-top: 10px; }
+.btn-warning { background: var(--warning); color: white; padding: 12px; width: 100%; margin-top: 10px; }
 
 input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #d1d5db; margin-bottom: 10px; font-size: 1rem; background: #fff; }
 
@@ -60,8 +68,22 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 .nav-btn .icon { font-size: 1.4rem; }
 .nav-btn.active { color: var(--primary); }
 
-/* Workout specific */
-.set-row { display: grid; grid-template-columns: 0.5fr 0.8fr 2fr; gap: 10px; margin-bottom: 12px; align-items: center; }
-.rir-selector { display: flex; gap: 4px; }
-.rir-btn { flex: 1; padding: 10px 0; font-size: 0.85rem; background: #f3f4f6; border-radius: 6px; text-align: center; cursor: pointer; border: 1px solid transparent; }
-.rir-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); }
+/* Workout Screen Components */
+.rir-legend-box {
+    background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;
+    padding: 12px; border-radius: 8px; margin-bottom: 20px;
+    font-size: 0.85rem; text-align: center;
+}
+.rir-legend-title { font-weight: bold; display: block; margin-bottom: 4px; text-transform: uppercase; }
+
+/* Set Rows */
+.set-row { display: grid; grid-template-columns: 0.5fr 0.8fr 2fr; gap: 10px; margin-bottom: 12px; align-items: flex-end; }
+
+/* RIR Labels above buttons */
+.rir-container { display: flex; flex-direction: column; width: 100%; }
+.rir-header-row { display: flex; justify-content: space-between; margin-bottom: 2px; padding: 0 2px; }
+.rir-label { font-size: 0.6rem; font-weight: bold; color: var(--text-muted); width: 25%; text-align: center; }
+
+.rir-selector { display: flex; gap: 4px; width: 100%; }
+.rir-btn { flex: 1; padding: 10px 0; font-size: 0.85rem; background: #f3f4f6; border-radius: 6px; text-align: center; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+.rir-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); font-weight: bold; }
