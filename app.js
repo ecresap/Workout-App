@@ -3,7 +3,7 @@
  * Updates: Weight Override, Full History Editing, Progression Fixes
  */
 
-const STORAGE_KEY = 'strengthOS_data_v2';
+const STORAGE_KEY = 'strengthOS_data_v3';
 const DRAFT_KEY = 'strengthOS_active_draft';
 
 // --- 1. EXERCISE LIBRARY ---
