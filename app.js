@@ -1,31 +1,28 @@
 /**
- * StrengthOS - Complete Mobile PWA v2
- * Updates: Expanded Library, Pause/Resume, Dashboard Summaries, New RIR UI
+ * StrengthOS - Complete Mobile PWA v5
+ * Updates: Swap, History Text, Rest Timer, Smart Buttons, Real Consistency
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
 
-// --- 1. EXPANDED EXERCISE DATA ---
+// --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
     // Chest
     { id: 'db_bench', name: 'DB Chest Press', muscle: 'chest', pattern: 'push_horiz', type: 'dumbbell', joint: 'shoulder' },
     { id: 'db_incline', name: 'Incline DB Press', muscle: 'chest', pattern: 'push_horiz', type: 'dumbbell', joint: 'shoulder' },
     { id: 'db_fly', name: 'DB Chest Fly', muscle: 'chest', pattern: 'iso_chest', type: 'dumbbell', joint: 'shoulder' },
     { id: 'pushup', name: 'Pushups', muscle: 'chest', pattern: 'push_horiz', type: 'bodyweight', joint: 'wrist' },
-    
     // Back
     { id: 'db_row', name: 'One-Arm DB Row', muscle: 'back', pattern: 'pull_horiz', type: 'dumbbell', joint: 'low_back' },
     { id: 'renegade_row', name: 'Renegade Row', muscle: 'back', pattern: 'pull_horiz', type: 'dumbbell', joint: 'wrist' },
     { id: 'db_pullover', name: 'DB Pullover', muscle: 'back', pattern: 'pull_vert', type: 'dumbbell', joint: 'shoulder' },
     { id: 'pullup', name: 'Pull-Ups (or Assisted)', muscle: 'back', pattern: 'pull_vert', type: 'bodyweight', joint: 'shoulder' },
-    
     // Shoulders
     { id: 'ohp', name: 'DB Overhead Press', muscle: 'shoulders', pattern: 'push_vert', type: 'dumbbell', joint: 'shoulder' },
     { id: 'arnold', name: 'Arnold Press', muscle: 'shoulders', pattern: 'push_vert', type: 'dumbbell', joint: 'shoulder' },
     { id: 'lat_raise', name: 'DB Lateral Raise', muscle: 'shoulders', pattern: 'iso_lat', type: 'dumbbell', joint: 'shoulder' },
     { id: 'rear_fly', name: 'Rear Delt Fly', muscle: 'shoulders', pattern: 'iso_rear', type: 'dumbbell', joint: 'shoulder' },
-    
     // Legs
     { id: 'goblet', name: 'Goblet Squat', muscle: 'quads', pattern: 'squat', type: 'dumbbell', joint: 'knee' },
     { id: 'split_squat', name: 'Bulgarian Split Squat', muscle: 'quads', pattern: 'lunge', type: 'dumbbell', joint: 'knee' },
@@ -33,7 +30,6 @@ const DEFAULT_EXERCISES = [
     { id: 'rdl', name: 'DB RDL', muscle: 'hamstrings', pattern: 'hinge', type: 'dumbbell', joint: 'low_back' },
     { id: 'glute_bridge', name: 'Glute Bridge', muscle: 'glutes', pattern: 'hinge', type: 'bodyweight', joint: 'low_back' },
     { id: 'calf_raise', name: 'DB Calf Raise', muscle: 'calves', pattern: 'iso_calf', type: 'dumbbell', joint: 'ankle' },
-    
     // Arms
     { id: 'db_curl', name: 'Standing DB Curl', muscle: 'biceps', pattern: 'pull_iso', type: 'dumbbell', joint: 'wrist' },
     { id: 'hammer', name: 'Hammer Curl', muscle: 'biceps', pattern: 'pull_iso', type: 'dumbbell', joint: 'wrist' },
@@ -42,7 +38,6 @@ const DEFAULT_EXERCISES = [
     { id: 'skullcrusher', name: 'DB Skullcrushers', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'kickback', name: 'Tricep Kickbacks', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'bench_dip', name: 'Bench Dips', muscle: 'triceps', pattern: 'push_iso', type: 'bodyweight', joint: 'shoulder' },
-
     // Core
     { id: 'plank', name: 'Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
     { id: 'russian', name: 'Russian Twist', muscle: 'core', pattern: 'iso_core', type: 'dumbbell', joint: 'low_back' }
@@ -63,7 +58,7 @@ const Store = {
         if (stored) {
             this.data = JSON.parse(stored);
             if (!this.data.exercises || this.data.exercises.length < 10) {
-                this.data.exercises = DEFAULT_EXERCISES; // Update lib if old
+                this.data.exercises = DEFAULT_EXERCISES; 
             }
         } else {
             this.data = initialState;
@@ -77,10 +72,8 @@ const Store = {
         this.data.history.push(session);
         Coach.updateProgression(session);
         this.save();
-        // Clear draft on save
         localStorage.removeItem(DRAFT_KEY);
     },
-    // Draft / Pause Logic
     saveDraft(planData) {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(planData));
     },
@@ -92,62 +85,86 @@ const Store = {
 
 // --- 3. COACH BRAIN ---
 const Coach = {
-    // ... (Plateau detection logic remains same, but using expanded library)
     detectPlateau(exId) {
-        // Simplified for brevity, same logic as before
         const hist = Store.data.history.filter(h => h.exercises.some(e => e.id === exId)).slice(-3);
         if (hist.length < 3) return null;
-        // Mock return
         return null;
     },
 
-    generateWorkout() {
-        const { frequency, emphasis, wristPain } = Store.data.profile;
+    getHistoryString(exId) {
+        const hist = Store.data.history;
+        for (let i = hist.length - 1; i >= 0; i--) {
+            const exData = hist[i].exercises.find(e => e.id === exId);
+            if (exData) {
+                const best = exData.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0, rir:0});
+                return `Last: ${best.weight}lbs x ${best.reps} (RIR ${best.rir})`;
+            }
+        }
+        return "New Exercise";
+    },
+
+    getAlternative(exId) {
+        const current = Store.data.exercises.find(e => e.id === exId);
+        if(!current) return null;
+        
+        const alts = Store.data.exercises.filter(e => 
+            e.muscle === current.muscle && 
+            e.id !== exId &&
+            (!Store.data.profile.wristPain || e.joint !== 'wrist')
+        );
+        
+        if (alts.length > 0) {
+            return alts[Math.floor(Math.random() * alts.length)];
+        }
+        return null;
+    },
+
+    generateWorkout(forcedType = null) {
+        const { frequency, wristPain } = Store.data.profile;
         const last = Store.data.history[Store.data.history.length - 1];
         
-        // Determine Day Type
         let type = 'full';
-        if (frequency >= 3) {
+        
+        if (forcedType) {
+            type = forcedType;
+        } else if (frequency >= 3) {
             type = (last && last.type === 'upper') ? 'lower' : 'upper';
         }
 
-        // 1. Muscle Groups Needed
         let muscles = [];
         if (type === 'upper') muscles = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'core'];
         if (type === 'lower') muscles = ['quads', 'hamstrings', 'glutes', 'calves', 'core'];
         if (type === 'full') muscles = ['chest', 'back', 'quads', 'hamstrings', 'shoulders'];
 
-        // 2. Pick Exercises
         let selected = [];
         muscles.forEach(m => {
             const pool = Store.data.exercises.filter(e => e.muscle === m && (!wristPain || e.joint !== 'wrist'));
             if (pool.length > 0) {
-                // Pick random 1
                 const ex = pool[Math.floor(Math.random() * pool.length)];
                 selected.push(ex);
             }
         });
 
-        // 3. Assign Targets
-        return selected.map(ex => {
-            const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' };
-            return {
-                ...ex,
-                targetWeight: prog.weight,
-                targetReps: prog.nextReps,
-                sets: 3,
-                note: null
-            };
-        });
+        return {
+            type: type,
+            exercises: selected.map(ex => {
+                const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' };
+                return {
+                    ...ex,
+                    targetWeight: prog.weight,
+                    targetReps: prog.nextReps,
+                    sets: 3,
+                    note: null
+                };
+            })
+        };
     },
 
     updateProgression(session) {
         session.exercises.forEach(res => {
             const lastSet = res.sets[res.sets.length - 1];
             const current = Store.data.progression[res.id] || { weight: 10, nextReps: '8-12' };
-            
             let newWeight = current.weight;
-            // Logic: RIR 3+ (Easy) -> Increase
             if (lastSet.rir >= 3) {
                 newWeight += (res.type === 'dumbbell' ? 5 : 0);
             }
@@ -158,19 +175,22 @@ const Coach = {
 
 // --- 4. UI RENDERER ---
 const UI = {
+    timerInterval: null,
+
     init() {
         this.container = document.getElementById('main-container');
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
+        
+        // Add Timer UI to body
+        const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
+        document.body.insertAdjacentHTML('beforeend', timerHtml);
 
         this.navBtns.forEach(b => b.addEventListener('click', () => this.nav(b.dataset.target)));
         this.nav('dashboard');
         
-        // Auto-save listener (Delegation)
         this.container.addEventListener('input', (e) => {
-            if (this.currentMode === 'workout') {
-                this.scrapeAndSaveDraft();
-            }
+            if (this.currentMode === 'workout') this.scrapeAndSaveDraft();
         });
     },
 
@@ -188,16 +208,35 @@ const UI = {
         if(view === 'settings') this.renderSettings();
     },
 
+    // --- DASHBOARD WITH CONSISTENCY ---
     renderDash() {
         this.pageTitle.innerText = 'Dashboard';
         const h = Store.data.history;
         const count = h.length;
         
-        // Find last Upper and Lower
         const lastUp = [...h].reverse().find(s => s.type === 'upper');
         const lastLow = [...h].reverse().find(s => s.type === 'lower');
-
         const formatDate = (d) => d ? new Date(d).toLocaleDateString() : 'None';
+
+        // REAL CONSISTENCY GRAPH
+        const last7Days = [...Array(7)].map((_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - (6 - i));
+            return d;
+        });
+
+        const bars = last7Days.map(date => {
+            const dateStr = date.toLocaleDateString();
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); 
+            const trained = h.some(session => new Date(session.date).toLocaleDateString() === dateStr);
+            
+            return `
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;">
+                    <div style="width:100%; background:${trained ? 'var(--primary)' : '#e2e8f0'}; height:${trained ? '100%' : '20%'}; border-radius:4px;"></div>
+                    <span style="font-size:0.6rem; color:#888">${dayName}</span>
+                </div>
+            `;
+        }).join('');
 
         this.container.innerHTML = `
             <div class="card">
@@ -215,40 +254,57 @@ const UI = {
                 <p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p>
             </div>
             <div class="card">
-                <h2>Consistency</h2>
-                <div style="display:flex; align-items:flex-end; gap:5px; height:60px; padding-top:10px;">
-                    ${[1,2,3,4,5,6,7].map(i => `<div style="flex:1; background:${i<4?'var(--primary)':'#e2e8f0'}; height:${Math.random()*100}%; border-radius:4px;"></div>`).join('')}
+                <h2>Last 7 Days</h2>
+                <div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">
+                    ${bars}
                 </div>
             </div>
         `;
     },
 
+    // --- WORKOUT INTRO WITH SMART BUTTONS ---
     renderWorkoutIntro() {
         this.pageTitle.innerText = 'Workout';
         const draft = Store.getDraft();
         
-        let actionArea = `
-            <button class="btn-primary" onclick="UI.startSession(false)">Start New Session</button>
-        `;
-        
-        if (draft) {
-            actionArea = `
-                <div class="card" style="border: 2px solid var(--warning);">
-                    <h3>Paused Session Found</h3>
-                    <p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p>
-                    <button class="btn-primary" style="background:var(--warning)" onclick="UI.startSession(true)">Resume Workout</button>
-                    <button class="btn-secondary" onclick="UI.clearDraft()">Discard</button>
-                </div>
-                <div style="margin-top:20px; text-align:center; color:#888;">- OR -</div>
-                <button class="btn-secondary" onclick="UI.startSession(false)">Start New Session</button>
-            `;
+        // Logic for Suggestion
+        const last = Store.data.history[Store.data.history.length - 1];
+        let primaryType = 'upper';
+        let altType = 'lower';
+
+        if (last && last.type === 'upper') {
+            primaryType = 'lower';
+            altType = 'upper';
         }
 
-        this.container.innerHTML = `
-            <div style="padding:20px 0;">
-                ${actionArea}
-            </div>
-        `;
+        if (draft) {
+            this.container.innerHTML = `
+                <div style="padding:20px 0;">
+                    <div class="card" style="border: 2px solid var(--warning);">
+                        <h3>Paused Session Found</h3>
+                        <p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p>
+                        <button class="btn-primary" style="background:var(--warning)" onclick="UI.resumeSession()">Resume Workout</button>
+                        <button class="btn-secondary" onclick="UI.clearDraft()">Discard</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            this.container.innerHTML = `
+                <div style="padding:20px 0;">
+                    <div class="card" style="text-align:center; padding: 30px 20px;">
+                        <div style="font-size:3rem; margin-bottom:10px;">💪</div>
+                        
+                        <button class="btn-primary" style="margin-bottom: 15px;" onclick="UI.startNewSession('${primaryType}')">
+                            Today's Workout: ${primaryType.toUpperCase()}
+                        </button>
+                        
+                        <button class="btn-secondary" style="font-size:0.9rem; padding: 10px;" onclick="UI.startNewSession('${altType}')">
+                            Alternative: ${altType.charAt(0).toUpperCase() + altType.slice(1)}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
     },
 
     clearDraft() {
@@ -256,26 +312,25 @@ const UI = {
         this.renderWorkoutIntro();
     },
 
-    startSession(isResume) {
-        let plan;
-        if (isResume) {
-            const draft = Store.getDraft();
-            plan = draft.plan;
-            this.currentPlan = plan; // Restore plan
-            this.currentStartTime = draft.startTime;
-        } else {
-            plan = Coach.generateWorkout();
-            this.currentPlan = plan;
-            this.currentStartTime = new Date().toISOString();
-        }
-        
-        this.renderActiveSession(plan, isResume);
+    resumeSession() {
+        const draft = Store.getDraft();
+        this.currentPlan = draft.plan; 
+        this.currentStartTime = draft.startTime;
+        this.currentType = draft.type;
+        this.renderActiveSession(true);
     },
 
-    renderActiveSession(plan, isResume) {
+    startNewSession(type) {
+        const generated = Coach.generateWorkout(type);
+        this.currentPlan = generated.exercises;
+        this.currentType = generated.type;
+        this.currentStartTime = new Date().toISOString();
+        this.renderActiveSession(false);
+    },
+
+    renderActiveSession(isResume) {
         const draft = isResume ? Store.getDraft() : null;
 
-        // Header Legend
         const legend = `
             <div class="rir-legend-box">
                 <span class="rir-legend-title">RIR Scale (Reps In Reserve)</span>
@@ -283,13 +338,16 @@ const UI = {
             </div>
         `;
 
-        const exercisesHtml = plan.map((ex, i) => `
+        const exercisesHtml = this.currentPlan.map((ex, i) => `
             <div class="card" id="card-${i}">
+                <button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>
                 ${ex.note ? `<div class="toast">${ex.note}</div>` : ''}
+                
                 <h3>${ex.name}</h3>
+                <div class="history-text">${Coach.getHistoryString(ex.id)}</div>
+                
                 <p style="color:var(--text-muted); margin-bottom:10px;">Target: ${ex.targetWeight} lbs | ${ex.targetReps} reps</p>
                 ${[1,2,3].map(s => {
-                    // Pre-fill if resume
                     const savedSet = draft?.inputs?.[`reps-${i}-${s}`];
                     const savedRir = draft?.inputs?.[`rir-${i}-${s}`] || 2;
                     
@@ -326,21 +384,77 @@ const UI = {
             <button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button>
             <button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>
         `;
-        
-        // Scroll to top
         window.scrollTo(0,0);
+    },
+
+    // --- LOGIC: SWAP, TIMER, SAVE ---
+
+    swapExercise(index) {
+        // Save current input first
+        this.scrapeAndSaveDraft();
+        
+        const oldEx = this.currentPlan[index];
+        const newEx = Coach.getAlternative(oldEx.id);
+        
+        if (newEx) {
+            if(confirm(`Swap ${oldEx.name} for ${newEx.name}?`)) {
+                // Update plan
+                const prog = Store.data.progression[newEx.id] || { weight: 10, nextReps: '8-12' };
+                this.currentPlan[index] = {
+                    ...newEx,
+                    targetWeight: prog.weight,
+                    targetReps: prog.nextReps,
+                    sets: 3,
+                    note: 'Swapped in'
+                };
+                // Force re-render with isResume=true to load inputs for OTHER exercises
+                this.renderActiveSession(true);
+            }
+        } else {
+            alert("No alternative exercises available for this muscle group.");
+        }
     },
 
     setRir(exIdx, setNum, val) {
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected'));
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected');
         document.getElementById(`rir-${exIdx}-${setNum}`).value = val;
-        this.scrapeAndSaveDraft(); // Auto save on click
+        
+        this.scrapeAndSaveDraft();
+        this.startTimer(120); // 2 min rest
+    },
+
+    startTimer(seconds) {
+        const overlay = document.getElementById('timer-overlay');
+        const display = document.getElementById('timer-val');
+        overlay.classList.add('active');
+        
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        
+        let rem = seconds;
+        const tick = () => {
+            const m = Math.floor(rem / 60).toString().padStart(2,'0');
+            const s = (rem % 60).toString().padStart(2,'0');
+            display.innerText = `${m}:${s}`;
+            if (rem <= 0) {
+                clearInterval(this.timerInterval);
+                display.innerText = "Ready!";
+                // Vibrate if on mobile
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            }
+            rem--;
+        };
+        tick();
+        this.timerInterval = setInterval(tick, 1000);
+    },
+
+    stopTimer() {
+        clearInterval(this.timerInterval);
+        document.getElementById('timer-overlay').classList.remove('active');
     },
 
     scrapeAndSaveDraft() {
         const inputs = {};
-        // Scrape all inputs
         document.querySelectorAll('input').forEach(inp => {
             if (inp.id) inputs[inp.id] = inp.value;
         });
@@ -348,6 +462,7 @@ const UI = {
         const draftData = {
             startTime: this.currentStartTime,
             plan: this.currentPlan,
+            type: this.currentType,
             inputs: inputs
         };
         Store.saveDraft(draftData);
@@ -355,17 +470,15 @@ const UI = {
 
     pauseSession() {
         this.scrapeAndSaveDraft();
-        this.nav('workout'); // Go back to workout tab home, which will show "Resume"
+        this.nav('workout'); 
     },
 
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
         
-        // 1. Scrape Data
-        const type = this.currentPlan.some(e => e.muscle === 'quads') ? 'lower' : 'upper'; // Simple guess logic
         const results = {
             date: new Date().toISOString(),
-            type: type,
+            type: this.currentType,
             exercises: this.currentPlan.map((ex, i) => ({
                 id: ex.id,
                 type: ex.type,
@@ -377,8 +490,8 @@ const UI = {
             }))
         };
 
-        // 2. Save
         Store.logSession(results);
+        this.stopTimer();
         alert("Great job! Progression updated.");
         this.nav('dashboard');
     },
