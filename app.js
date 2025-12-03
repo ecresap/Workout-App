@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v7
- * Updates: Charts, History Edit/Delete, Categorized Library
+ * StrengthOS - Complete Mobile PWA v8
+ * Updates: Weight Override, Full History Editing, Progression Fixes
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -74,12 +74,16 @@ const Store = {
         this.save();
         localStorage.removeItem(DRAFT_KEY);
     },
-    deleteSession(index) {
-        this.data.history.splice(index, 1);
+    updateHistorySession(index, updatedSession) {
+        this.data.history[index] = updatedSession;
+        // If editing the MOST RECENT session, update progression for next time
+        if (index === this.data.history.length - 1) {
+            Coach.updateProgression(updatedSession);
+        }
         this.save();
     },
-    updateSessionDate(index, newDate) {
-        this.data.history[index].date = newDate;
+    deleteSession(index) {
+        this.data.history.splice(index, 1);
         this.save();
     },
     saveDraft(planData) {
@@ -104,7 +108,8 @@ const Coach = {
         for (let i = hist.length - 1; i >= 0; i--) {
             const exData = hist[i].exercises.find(e => e.id === exId);
             if (exData) {
-                const best = exData.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0, rir:0});
+                // Find heaviest set
+                const best = exData.sets.reduce((p, c) => (c.weight > p.weight) ? c : (c.weight === p.weight && c.reps > p.reps ? c : p), {weight:0, reps:0, rir:0});
                 return `Last: ${best.weight}lbs x ${best.reps} (RIR ${best.rir})`;
             }
         }
@@ -112,18 +117,16 @@ const Coach = {
     },
 
     getChartData(exId) {
-        // Collect Estimated 1RM History (Weight * (1 + reps/30))
         return Store.data.history
             .map(s => {
                 const ex = s.exercises.find(e => e.id === exId);
                 if (!ex) return null;
                 const best = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0});
-                // E1RM Formula
                 const e1rm = best.weight * (1 + (best.reps / 30));
                 return { date: s.date, val: Math.round(e1rm) };
             })
             .filter(x => x !== null)
-            .slice(-10); // Last 10 points
+            .slice(-10);
     },
 
     getAlternative(exId) {
@@ -162,10 +165,20 @@ const Coach = {
 
     updateProgression(session) {
         session.exercises.forEach(res => {
+            // Find the last set to determine difficulty
             const lastSet = res.sets[res.sets.length - 1];
-            const current = Store.data.progression[res.id] || { weight: 10, nextReps: '8-12' };
-            let newWeight = current.weight;
-            if (lastSet.rir >= 3) newWeight += (res.type === 'dumbbell' ? 5 : 0);
+            // Use the ACTUAL used weight from the session, not the old target
+            // (Assuming straight sets, we take the weight from the last set)
+            const actualWeight = lastSet.weight || 0;
+            
+            let newWeight = actualWeight;
+            
+            // Logic: RIR 3+ (Easy) -> Increase
+            if (lastSet.rir >= 3) {
+                newWeight += (res.type === 'dumbbell' ? 5 : 0);
+            }
+            // RIR 0 (Failure) -> Maybe deload? For now keep same.
+            
             Store.data.progression[res.id] = { weight: newWeight, nextReps: '8-12' };
         });
     }
@@ -174,6 +187,7 @@ const Coach = {
 // --- 4. UI RENDERER ---
 const UI = {
     timerInterval: null,
+    editingHistoryIndex: null, // Track if we are editing past workout
 
     init() {
         this.container = document.getElementById('main-container');
@@ -187,7 +201,9 @@ const UI = {
         this.nav('dashboard');
         
         this.container.addEventListener('input', (e) => {
-            if (this.currentMode === 'workout') this.scrapeAndSaveDraft();
+            if (this.currentMode === 'workout' && this.editingHistoryIndex === null) {
+                this.scrapeAndSaveDraft();
+            }
         });
     },
 
@@ -197,6 +213,7 @@ const UI = {
         if (btn) btn.classList.add('active');
         
         this.currentMode = view;
+        this.editingHistoryIndex = null; // Reset edit mode on nav change
         this.container.innerHTML = '';
         
         if(view === 'dashboard') this.renderDash();
@@ -295,36 +312,101 @@ const UI = {
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
     startNewSession(type) { const g = Coach.generateWorkout(type); this.currentPlan = g.exercises; this.currentType = g.type; this.currentStartTime = new Date().toISOString(); this.renderActiveSession(false); },
 
-    renderActiveSession(isResume) {
-        const draft = isResume ? Store.getDraft() : null;
+    // Core renderer for both Active Workout and History Editing
+    renderActiveSession(isResumeOrEdit) {
+        // If editing history, use that data, else use draft or new
+        const isHistoryEdit = this.editingHistoryIndex !== null;
+        let dataMap = {}; // { 'reps-0-1': 10, 'weight-0': 50 }
+
+        if (isResumeOrEdit && !isHistoryEdit) {
+             // Resume Draft
+             const draft = Store.getDraft();
+             dataMap = draft?.inputs || {};
+        }
+
         const legend = `<div class="rir-legend-box"><span class="rir-legend-title">RIR Scale</span>0 = Failure | 1 = Hard | 2 = Sweet Spot | 3+ = Easy</div>`;
-        const exercisesHtml = this.currentPlan.map((ex, i) => `
+        
+        // Date Input for History Editing
+        let dateHeader = '';
+        if (isHistoryEdit) {
+            const currentSession = Store.data.history[this.editingHistoryIndex];
+            const dateVal = new Date(currentSession.date).toISOString().split('T')[0];
+            dateHeader = `
+                <div class="card" style="background:#fff3cd; border:1px solid #ffeeba;">
+                    <label style="font-size:0.8rem; font-weight:bold;">Editing Date:</label>
+                    <input type="date" id="edit-date-input" value="${dateVal}" style="margin-bottom:0;">
+                </div>`;
+        }
+
+        const exercisesHtml = this.currentPlan.map((ex, i) => {
+            // Determine weight value: Draft -> History -> Target
+            let weightVal = ex.targetWeight;
+            if (isHistoryEdit) {
+                // In history, weight might be per set, but we simplify to the first set's weight for the override input
+                // or check if we stored it
+                if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight; 
+            } else if (dataMap[`weight-${i}`]) {
+                weightVal = dataMap[`weight-${i}`];
+            }
+
+            return `
             <div class="card" id="card-${i}">
-                <button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>
+                ${!isHistoryEdit ? `<button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>` : ''}
                 ${ex.note ? `<div class="toast">${ex.note}</div>` : ''}
+                
                 <h3>${ex.name}</h3>
-                <div class="history-text">${Coach.getHistoryString(ex.id)}</div>
-                <p style="color:var(--text-muted); margin-bottom:10px;">Target: ${ex.targetWeight} lbs | ${ex.targetReps} reps</p>
+                <div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div>
+                
+                <div class="weight-input-group">
+                    <label>Working Weight:</label>
+                    <input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}>
+                    <span>lbs</span>
+                </div>
+
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">Target Reps: ${ex.targetReps}</p>
+                
                 ${[1,2,3].map(s => {
-                    const savedSet = draft?.inputs?.[`reps-${i}-${s}`];
-                    const savedRir = draft?.inputs?.[`rir-${i}-${s}`] || 2;
+                    // Logic to find values: Draft -> History -> Default
+                    let repVal = '';
+                    let rirVal = 2;
+
+                    if (isHistoryEdit) {
+                        // ex.sets is array [ {reps:10, rir:2, weight:50}, ... ]
+                        const setObj = ex.sets[s-1]; // s is 1-based
+                        if (setObj) {
+                            repVal = setObj.reps;
+                            rirVal = setObj.rir;
+                        }
+                    } else {
+                        repVal = dataMap[`reps-${i}-${s}`] || '';
+                        rirVal = dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2;
+                    }
+
                     return `
                     <div class="set-row">
                         <span style="font-size:0.8rem; color:#888">Set ${s}</span>
-                        <input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${savedSet || ''}" onchange="UI.scrapeAndSaveDraft()">
+                        <input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${repVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}>
                         <div class="rir-container">
                             <div class="rir-header-row"><span class="rir-label">F</span><span class="rir-label">H</span><span class="rir-label">SP</span><span class="rir-label">E</span></div>
                             <div class="rir-selector" id="rir-box-${i}-${s}">
-                                ${[0,1,2,3].map(r => `<div class="rir-btn ${savedRir == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}
+                                ${[0,1,2,3].map(r => `<div class="rir-btn ${rirVal == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}
                             </div>
                         </div>
-                        <input type="hidden" id="rir-${i}-${s}" value="${savedRir}">
+                        <input type="hidden" id="rir-${i}-${s}" value="${rirVal}">
                     </div>`;
                 }).join('')}
             </div>
-        `).join('');
+        `}).join('');
         
-        this.container.innerHTML = `${legend}${exercisesHtml}<button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button><button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>`;
+        let actionBtn = `<button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button>
+                         <button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>`;
+        
+        if (isHistoryEdit) {
+            actionBtn = `<button class="btn-primary" onclick="UI.saveEditedHistory()">Save Changes</button>
+                         <button class="btn-secondary" onclick="UI.renderHistoryManager()">Cancel</button>`;
+        }
+
+        this.container.innerHTML = `${dateHeader}${legend}${exercisesHtml}${actionBtn}`;
         window.scrollTo(0,0);
     },
 
@@ -343,8 +425,11 @@ const UI = {
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected'));
         document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected');
         document.getElementById(`rir-${exIdx}-${setNum}`).value = val;
-        this.scrapeAndSaveDraft();
-        this.startTimer(120); 
+        
+        if (this.editingHistoryIndex === null) {
+            this.scrapeAndSaveDraft();
+            this.startTimer(120); 
+        }
     },
 
     startTimer(seconds) {
@@ -365,20 +450,33 @@ const UI = {
     },
 
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
+    
     scrapeAndSaveDraft() {
         const inputs = {};
         document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; });
         Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs });
     },
+    
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
+    
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
+        
         const results = {
             date: new Date().toISOString(),
             type: this.currentType,
-            exercises: this.currentPlan.map((ex, i) => ({
-                id: ex.id, type: ex.type, sets: [1,2,3].map(s => ({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value), weight: ex.targetWeight }))
-            }))
+            exercises: this.currentPlan.map((ex, i) => {
+                const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight;
+                return {
+                    id: ex.id, 
+                    type: ex.type, 
+                    sets: [1,2,3].map(s => ({ 
+                        reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, 
+                        rir: Number(document.getElementById(`rir-${i}-${s}`).value), 
+                        weight: w // Use the override weight
+                    }))
+                };
+            })
         };
         Store.logSession(results);
         this.stopTimer();
@@ -425,7 +523,6 @@ const UI = {
         const data = Coach.getChartData(exId);
         if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-top:40px; color:#888;">Not enough data yet.</p>'; return; }
         
-        // Simple SVG Line Chart logic
         const h = 150, w = container.offsetWidth || 300;
         const vals = data.map(d => d.val);
         const min = Math.min(...vals) * 0.9;
@@ -489,7 +586,7 @@ const UI = {
                     <span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span>
                 </div>
                 <div class="history-actions">
-                    <button class="btn-sm" onclick="UI.editDate(${item.origIndex})">Edit Date</button>
+                    <button class="btn-sm" onclick="UI.editWorkout(${item.origIndex})">Edit Workout</button>
                     <button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button>
                 </div>
             </div>
@@ -508,12 +605,43 @@ const UI = {
         }
     },
 
-    editDate(index) {
-        const newDate = prompt("Enter new date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
-        if (newDate) {
-            Store.updateSessionDate(index, new Date(newDate).toISOString());
-            this.renderHistoryManager();
-        }
+    editWorkout(index) {
+        // Load the session into currentPlan
+        const session = Store.data.history[index];
+        this.editingHistoryIndex = index;
+        this.currentPlan = session.exercises;
+        this.currentType = session.type;
+        // renderActiveSession will handle pulling data from the history object via editingHistoryIndex
+        this.renderActiveSession(true);
+    },
+
+    saveEditedHistory() {
+        const index = this.editingHistoryIndex;
+        if (index === null) return;
+        
+        const dateInput = document.getElementById('edit-date-input').value;
+        const newDate = dateInput ? new Date(dateInput).toISOString() : Store.data.history[index].date;
+
+        const updatedSession = {
+            date: newDate,
+            type: this.currentType,
+            exercises: this.currentPlan.map((ex, i) => {
+                const w = Number(document.getElementById(`weight-${i}`).value) || 0;
+                return {
+                    id: ex.id, 
+                    type: ex.type, 
+                    sets: [1,2,3].map(s => ({ 
+                        reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, 
+                        rir: Number(document.getElementById(`rir-${i}-${s}`).value), 
+                        weight: w
+                    }))
+                };
+            })
+        };
+
+        Store.updateHistorySession(index, updatedSession);
+        alert("Workout updated!");
+        this.nav('settings');
     },
 
     saveSet() {
