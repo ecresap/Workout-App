@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v11
- * Updates: Deload Logic, Readiness Check
+ * StrengthOS - Complete Mobile PWA v12
+ * Updates: Micro-loading (2.5lbs) for small muscle groups
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -152,8 +152,7 @@ const Coach = {
         
         let type = forcedType ? forcedType : (frequency >= 3 ? ((last && last.type === 'upper') ? 'lower' : 'upper') : 'full');
 
-        // --- DELOAD LOGIC ---
-        // Check if session count is multiple of 18 (approx 6 weeks)
+        // Deload: Every 18 sessions (approx 6 weeks)
         const sessionCount = Store.data.history.length;
         const isDeload = (sessionCount > 0 && sessionCount % 18 === 0);
 
@@ -177,19 +176,16 @@ const Coach = {
         });
         Store.save();
 
-        // Determine Sets based on Readiness
         let setVolume = 3;
         if (readinessScore <= 3) setVolume = 2;
-        if (isDeload) setVolume = 2; // Force low volume on deload
+        if (isDeload) setVolume = 2;
 
         return {
             type: type,
             isDeload: isDeload,
             exercises: selected.map(ex => {
                 const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' };
-                // Adjust Weight for Deload (70% load)
                 const workingWeight = isDeload ? Math.round(prog.weight * 0.7) : prog.weight;
-                
                 const plateauMsg = this.detectPlateau(ex.id);
                 return { 
                     ...ex, 
@@ -208,10 +204,22 @@ const Coach = {
             const actualWeight = lastSet.weight || 0;
             const reps = lastSet.reps || 0;
             let newWeight = actualWeight;
+            
             // Logic: High Reps AND High RIR = Increase
             if (reps >= 10 && lastSet.rir >= 3) {
-                newWeight += (res.type === 'dumbbell' ? 5 : 0);
+                // NEW: Micro-loading logic
+                const smallMuscles = ['biceps', 'triceps', 'shoulders', 'calves', 'core'];
+                // Check if this exercise hits a small muscle
+                // We need to look up the muscle group from the exercise ID or use the logged data if we stored muscle there
+                // Since 'res' here is from history, we look up the base exercise definition
+                const exDef = Store.data.exercises.find(e => e.id === res.id);
+                const isSmall = exDef ? smallMuscles.includes(exDef.muscle) : false;
+
+                if (res.type === 'dumbbell') {
+                    newWeight += isSmall ? 2.5 : 5;
+                }
             }
+            
             Store.data.progression[res.id] = { weight: newWeight, nextReps: '8-12' };
         });
     }
@@ -221,14 +229,13 @@ const Coach = {
 const UI = {
     timerInterval: null,
     editingHistoryIndex: null,
-    pendingWorkoutType: null, // Temp store for modal
+    pendingWorkoutType: null,
 
     init() {
         this.container = document.getElementById('main-container');
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
         
-        // Add Timer & Modal to body
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const modalHtml = `
             <div id="readiness-modal" class="modal-overlay">
@@ -278,7 +285,8 @@ const UI = {
             <div class="card">
                 <div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div>
                 <div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div>
-                <div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p></div>
+                <div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p>
+                <p><strong>Small Muscles (Arms/Shoulders):</strong> Increase by 2.5 lbs.<br><strong>Large Muscles:</strong> Increase by 5 lbs.</p></div>
             </div>`;
     },
 
@@ -336,7 +344,6 @@ const UI = {
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
     
-    // NEW: Trigger Modal instead of direct start
     triggerReadiness(type) {
         this.pendingWorkoutType = type;
         document.getElementById('readiness-modal').classList.add('active');
@@ -361,7 +368,6 @@ const UI = {
         let dataMap = {}; 
         if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
 
-        // Deload Banner
         let topHtml = '';
         if (this.isDeload) topHtml += `<div class="deload-banner">⚠️ <strong>Deload Week</strong><br>Weights reduced by 30%. Focus on recovery.</div>`;
 
@@ -379,7 +385,6 @@ const UI = {
             if (isHistoryEdit) { if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight; } 
             else if (dataMap[`weight-${i}`]) { weightVal = dataMap[`weight-${i}`]; }
 
-            // Dynamic Set Generation based on plan (2 or 3 sets)
             const setRows = Array.from({length: ex.sets}, (_, k) => k + 1).map(s => {
                 let repVal = '', rirVal = 2;
                 if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } 
@@ -463,7 +468,6 @@ const UI = {
             date: new Date().toISOString(), type: this.currentType,
             exercises: this.currentPlan.map((ex, i) => {
                 const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight;
-                // Capture varying number of sets (2 or 3)
                 const setsData = [];
                 for(let s=1; s<=ex.sets; s++) {
                     setsData.push({
