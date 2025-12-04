@@ -1,4 +1,4 @@
-const CACHE_NAME = 'strength-os-v13';
+const CACHE_NAME = 'strength-os-v14';
 const ASSETS = [
     './',
     './index.html',
