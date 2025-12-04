@@ -47,6 +47,29 @@ h1 { font-size: 1.5rem; font-weight: 700; }
     padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: center;
 }
 
+/* Coach's Clipboard */
+.clipboard-card { 
+    background: #f0fdf4; border: 1px solid #bbf7d0; 
+    border-left: 6px solid var(--accent);
+}
+.clipboard-header {
+    display: flex; align-items: center; gap: 8px;
+    color: #166534; font-weight: 700; margin-bottom: 12px; font-size: 1.1rem;
+}
+.clipboard-item {
+    display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;
+    font-size: 0.95rem; color: #14532d; line-height: 1.4;
+}
+.clipboard-item:last-child { margin-bottom: 0; }
+.clipboard-check {
+    min-width: 24px; height: 24px;
+    border: 2px solid #166534; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; background: white; margin-top: 2px;
+}
+.clipboard-check.checked { background: #166534; color: white; }
+.clipboard-check.checked::after { content: '✓'; font-size: 14px; font-weight: bold; }
+
 /* Library Headers */
 .lib-header {
     font-size: 1.1rem; color: var(--text-muted); 
