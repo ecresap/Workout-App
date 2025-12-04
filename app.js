@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v14
- * Updates: Coach's Clipboard (Weekly Goals), Aggressive Update logic
+ * StrengthOS - Complete Mobile PWA v15
+ * Updates: Expanded Guide Tab with Plateau & Edit features
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -96,7 +96,6 @@ const Store = {
 
 // --- 3. COACH BRAIN ---
 const Coach = {
-    // Generates the Clipboard Items
     generateWeeklyFocus() {
         const h = Store.data.history;
         const items = [];
@@ -137,10 +136,8 @@ const Coach = {
             items.push("🛡️ <strong>Deload:</strong> Fatigue accumulation detected. We are lightening the load this week.");
         }
 
-        // Fallback
         if (items.length === 0) items.push("✨ <strong>Form Focus:</strong> Control the eccentric (lowering) phase for 3 seconds on every rep.");
 
-        // Limit to top 2-3 items
         return items.slice(0, 3);
     },
 
@@ -255,7 +252,7 @@ const Coach = {
             
             // Logic: High Reps AND High RIR = Increase
             if (reps >= 10 && lastSet.rir >= 3) {
-                // Micro-loading logic
+                // NEW: Micro-loading logic
                 const smallMuscles = ['biceps', 'triceps', 'shoulders', 'calves', 'core'];
                 const exDef = Store.data.exercises.find(e => e.id === res.id);
                 const isSmall = exDef ? smallMuscles.includes(exDef.muscle) : false;
@@ -332,6 +329,12 @@ const UI = {
                 <div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div>
                 <div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p>
                 <p><strong>Small Muscles (Arms/Shoulders):</strong> Increase by 2.5 lbs.<br><strong>Large Muscles:</strong> Increase by 5 lbs.</p></div>
+                
+                <div class="guide-block"><h3>🧱 Plateau Detection</h3><p>The Coach looks at your last 3 sessions. If you fail to increase weights or reps for 3 straight workouts, a warning banner appears on that exercise.</p></div>
+                
+                <div class="guide-block"><h3>🔄 Exercise Swapping</h3><p>Stuck on a plateau or equipment busy? Click the 🔄 button on any exercise card to instantly swap it for a variation. The Coach remembers this swap for next time.</p></div>
+                
+                <div class="guide-block"><h3>✏️ Editing History</h3><p>Made a logging mistake? Go to <strong>Settings > Manage History</strong>. You can edit the data or delete the last 3 workouts to keep your stats clean.</p></div>
             </div>`;
     },
 
