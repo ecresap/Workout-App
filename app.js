@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v13
- * Updates: Aggressive PWA Update Logic (Service Worker)
+ * StrengthOS - Complete Mobile PWA v14
+ * Updates: Coach's Clipboard (Weekly Goals), Aggressive Update logic
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -96,6 +96,54 @@ const Store = {
 
 // --- 3. COACH BRAIN ---
 const Coach = {
+    // Generates the Clipboard Items
+    generateWeeklyFocus() {
+        const h = Store.data.history;
+        const items = [];
+
+        // 1. Consistency Check (Last 7 days)
+        const last7 = h.filter(s => new Date(s.date) > new Date(Date.now() - 7*86400000));
+        const freqTarget = Store.data.profile.frequency;
+        
+        if (last7.length < freqTarget) {
+            items.push("📅 <strong>Consistency:</strong> You missed a target session recently. Goal: Just show up and punch the clock this week.");
+        } else {
+            items.push("🔥 <strong>Streak:</strong> You are consistent! Keep this momentum.");
+        }
+
+        // 2. The Push (Find "Almost there" exercise)
+        if (h.length > 0) {
+            const lastSession = h[h.length - 1];
+            // Find an exercise with high reps (10-11) but not 12
+            const closeCall = lastSession.exercises.find(e => {
+                const best = e.sets.reduce((p,c) => c.reps > p.reps ? c : p, {reps:0});
+                return best.reps >= 10 && best.reps < 12;
+            });
+            if (closeCall) {
+                const exName = Store.data.exercises.find(e => e.id === closeCall.id)?.name || "Exercise";
+                items.push(`💪 <strong>The Push:</strong> You hit high reps on ${exName}. Focus on breathing and get 12 clean reps.`);
+            }
+        }
+
+        // 3. Balance Check (Last 3 sessions)
+        const recent = h.slice(-3);
+        const upperCount = recent.filter(s => s.type === 'upper').length;
+        const lowerCount = recent.filter(s => s.type === 'lower').length;
+        if (upperCount > lowerCount + 1) items.push("⚖️ <strong>Balance:</strong> Lower body volume is lagging. Prioritize your next Leg Day.");
+        if (lowerCount > upperCount + 1) items.push("⚖️ <strong>Balance:</strong> Upper body volume is lagging. Prioritize Push/Pull next.");
+
+        // 4. Deload warning
+        if (h.length > 0 && h.length % 18 === 0) {
+            items.push("🛡️ <strong>Deload:</strong> Fatigue accumulation detected. We are lightening the load this week.");
+        }
+
+        // Fallback
+        if (items.length === 0) items.push("✨ <strong>Form Focus:</strong> Control the eccentric (lowering) phase for 3 seconds on every rep.");
+
+        // Limit to top 2-3 items
+        return items.slice(0, 3);
+    },
+
     detectPlateau(exId) {
         const hist = Store.data.history
             .filter(h => h.exercises.some(e => e.id === exId))
@@ -207,7 +255,7 @@ const Coach = {
             
             // Logic: High Reps AND High RIR = Increase
             if (reps >= 10 && lastSet.rir >= 3) {
-                // NEW: Micro-loading logic
+                // Micro-loading logic
                 const smallMuscles = ['biceps', 'triceps', 'shoulders', 'calves', 'core'];
                 const exDef = Store.data.exercises.find(e => e.id === res.id);
                 const isSmall = exDef ? smallMuscles.includes(exDef.muscle) : false;
@@ -296,6 +344,15 @@ const UI = {
         const lastLow = [...h].reverse().find(s => s.type === 'lower');
         const formatDate = (d) => d ? new Date(d).toLocaleDateString() : 'None';
 
+        // Goals Generation
+        const goals = Coach.generateWeeklyFocus();
+        const clipboardHtml = goals.map(text => 
+            `<div class="clipboard-item">
+                <div class="clipboard-check" onclick="this.classList.toggle('checked')"></div>
+                <div>${text}</div>
+            </div>`
+        ).join('');
+
         const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
         const bars = last7Days.map(date => {
             const dateStr = date.toLocaleDateString();
@@ -305,6 +362,10 @@ const UI = {
         }).join('');
 
         this.container.innerHTML = `
+            <div class="card clipboard-card">
+                <div class="clipboard-header">📋 Coach's Focus for You</div>
+                ${clipboardHtml}
+            </div>
             <div class="card">
                 <h2>Overview</h2>
                 <div class="summary-grid">
