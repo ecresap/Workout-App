@@ -164,3 +164,15 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 }
 .readiness-btn small { font-size: 0.8rem; font-weight: normal; color: var(--text-muted); }
 .readiness-btn:active { border-color: var(--primary); background-color: #eff6ff; transform: scale(0.98); }
+
+/* NEW: Swap Modal List */
+.swap-list { list-style: none; padding: 0; margin: 0; text-align: left; overflow-y: auto; max-height: 60vh; }
+.swap-item { 
+    padding: 15px 10px; border-bottom: 1px solid #f3f4f6; cursor: pointer; 
+    display: flex; justify-content: space-between; align-items: center;
+}
+.swap-item:last-child { border-bottom: none; }
+.swap-item:active { background: #f9fafb; }
+.swap-item strong { font-size: 1rem; color: var(--text-main); display: block; margin-bottom: 2px; }
+.swap-item small { font-size: 0.8rem; color: var(--text-muted); }
+.swap-select-btn { color: var(--primary); font-weight: 600; font-size: 0.9rem; }
