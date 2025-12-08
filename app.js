@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v16
- * Updates: Layout fixes, CSS restoration, Guide content
+ * StrengthOS - Complete Mobile PWA v17
+ * Updates: Manual Exercise Selection in Swap
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -141,12 +141,11 @@ const Coach = {
         }).filter(x => x !== null).slice(-10);
     },
 
-    getAlternative(exId) {
+    // NEW: Returns ALL alternatives
+    getAlternatives(exId) {
         const current = Store.data.exercises.find(e => e.id === exId);
-        if(!current) return null;
-        const alts = Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
-        if (alts.length > 0) return alts[Math.floor(Math.random() * alts.length)];
-        return null;
+        if(!current) return [];
+        return Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
     },
 
     generateWorkout(forcedType = null, readinessScore = 5) {
@@ -213,11 +212,8 @@ const UI = {
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
         
-        // Remove old overlays if existing
-        const oldTimer = document.getElementById('timer-overlay');
-        const oldModal = document.getElementById('readiness-modal');
-        if(oldTimer) oldTimer.remove();
-        if(oldModal) oldModal.remove();
+        const oldTimer = document.getElementById('timer-overlay'); const oldModal = document.getElementById('readiness-modal');
+        if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove();
 
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel today?</h3><p style="color:#666; margin-bottom:20px;">Be honest. The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
@@ -308,9 +304,45 @@ const UI = {
         window.scrollTo(0,0);
     },
 
+    // NEW SWAP LOGIC: Show List
     swapExercise(index) {
-        this.scrapeAndSaveDraft(); const oldEx = this.currentPlan[index]; const newEx = Coach.getAlternative(oldEx.id);
-        if (newEx && confirm(`Swap ${oldEx.name} for ${newEx.name}?`)) { Store.data.activeExercises[oldEx.muscle] = newEx.id; Store.save(); const prog = Store.data.progression[newEx.id] || { weight: 10, nextReps: '8-12' }; this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped & Saved' }; this.renderActiveSession(true); } else { alert("No alternative available."); }
+        this.scrapeAndSaveDraft();
+        const oldEx = this.currentPlan[index];
+        const alternatives = Coach.getAlternatives(oldEx.id);
+        
+        if (alternatives.length === 0) { alert("No other exercises found for this muscle group."); return; }
+
+        const listHtml = alternatives.map(ex => `
+            <div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}')">
+                <div><strong>${ex.name}</strong><small>${ex.pattern}</small></div>
+                <span class="swap-select-btn">Select</span>
+            </div>
+        `).join('');
+
+        const modalHtml = `
+            <div id="swap-modal" class="modal-overlay active">
+                <div class="modal-content" style="text-align:left; padding:0; overflow:hidden;">
+                    <div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:1.1rem;">Swap ${oldEx.name}</h3>
+                        <div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').remove()">X</div>
+                    </div>
+                    <div class="swap-list">${listHtml}</div>
+                </div>
+            </div>`;
+        
+        const existing = document.getElementById('swap-modal'); if(existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    },
+
+    selectSwap(index, newId) {
+        document.getElementById('swap-modal').remove();
+        const newEx = Store.data.exercises.find(e => e.id === newId);
+        Store.data.activeExercises[newEx.muscle] = newId; 
+        Store.save();
+        
+        const prog = Store.data.progression[newId] || { weight: 10, nextReps: '8-12' };
+        this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped & Saved' };
+        this.renderActiveSession(true);
     },
 
     setRir(exIdx, setNum, val) {
