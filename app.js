@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v17
- * Updates: Manual Exercise Selection in Swap
+ * StrengthOS - Complete Mobile PWA v18
+ * Updates: Full Library Swap with Persistence
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -141,11 +141,26 @@ const Coach = {
         }).filter(x => x !== null).slice(-10);
     },
 
-    // NEW: Returns ALL alternatives
-    getAlternatives(exId) {
-        const current = Store.data.exercises.find(e => e.id === exId);
-        if(!current) return [];
-        return Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
+    // NEW: Get ALL exercises grouped by muscle for the Swap Modal
+    getAllExercisesGrouped() {
+        const groups = { 'Chest': [], 'Back': [], 'Shoulders': [], 'Legs': [], 'Arms': [], 'Core': [] };
+        // Helper to map muscle to group
+        const getGroup = (m) => {
+            if (['chest'].includes(m)) return 'Chest';
+            if (['back'].includes(m)) return 'Back';
+            if (['shoulders'].includes(m)) return 'Shoulders';
+            if (['quads','hamstrings','glutes','calves'].includes(m)) return 'Legs';
+            if (['biceps','triceps'].includes(m)) return 'Arms';
+            return 'Core';
+        };
+        
+        Store.data.exercises.forEach(ex => {
+            if (!Store.data.profile.wristPain || ex.joint !== 'wrist') {
+                const g = getGroup(ex.muscle);
+                groups[g].push(ex);
+            }
+        });
+        return groups;
     },
 
     generateWorkout(forcedType = null, readinessScore = 5) {
@@ -164,6 +179,7 @@ const Coach = {
         muscles.forEach(m => {
             let exId = Store.data.activeExercises[m];
             let ex = Store.data.exercises.find(e => e.id === exId);
+            // If invalid or not set, pick default
             if (!ex || (wristPain && ex.joint === 'wrist')) {
                 const pool = Store.data.exercises.filter(e => e.muscle === m && (!wristPain || e.joint !== 'wrist'));
                 if (pool.length > 0) { ex = pool[Math.floor(Math.random() * pool.length)]; Store.data.activeExercises[m] = ex.id; }
@@ -244,8 +260,7 @@ const UI = {
                 <div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div>
                 <div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div>
                 <div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div>
-                <div class="guide-block"><h3>🧱 Plateau Detection</h3><p>If you fail to increase weights or reps for 3 straight workouts, a warning banner appears. Use the 🔄 button to swap the exercise.</p></div>
-                <div class="guide-block"><h3>✏️ History Editing</h3><p>Mistake? Go to Settings > Manage History. You can edit dates, weights, and reps of your last 3 sessions.</p></div>
+                <div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div>
             </div>`;
     },
 
@@ -308,25 +323,29 @@ const UI = {
     swapExercise(index) {
         this.scrapeAndSaveDraft();
         const oldEx = this.currentPlan[index];
-        const alternatives = Coach.getAlternatives(oldEx.id);
+        const allGrouped = Coach.getAllExercisesGrouped();
         
-        if (alternatives.length === 0) { alert("No other exercises found for this muscle group."); return; }
-
-        const listHtml = alternatives.map(ex => `
-            <div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}')">
-                <div><strong>${ex.name}</strong><small>${ex.pattern}</small></div>
-                <span class="swap-select-btn">Select</span>
-            </div>
-        `).join('');
+        let listHtml = '';
+        for (const [group, exercises] of Object.entries(allGrouped)) {
+            if (exercises.length > 0) {
+                listHtml += `<div class="swap-header">${group}</div>`;
+                listHtml += exercises.map(ex => `
+                    <div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${oldEx.muscle}')">
+                        <div><strong>${ex.name}</strong><small>${ex.pattern}</small></div>
+                        <span class="swap-select-btn">Select</span>
+                    </div>
+                `).join('');
+            }
+        }
 
         const modalHtml = `
             <div id="swap-modal" class="modal-overlay active">
-                <div class="modal-content" style="text-align:left; padding:0; overflow:hidden;">
+                <div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;">
                     <div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
                         <h3 style="margin:0; font-size:1.1rem;">Swap ${oldEx.name}</h3>
                         <div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').remove()">X</div>
                     </div>
-                    <div class="swap-list">${listHtml}</div>
+                    <div class="swap-list" style="overflow-y:auto;">${listHtml}</div>
                 </div>
             </div>`;
         
@@ -334,10 +353,12 @@ const UI = {
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     },
 
-    selectSwap(index, newId) {
+    selectSwap(index, newId, oldMuscle) {
         document.getElementById('swap-modal').remove();
         const newEx = Store.data.exercises.find(e => e.id === newId);
-        Store.data.activeExercises[newEx.muscle] = newId; 
+        // Overwrite the OLD muscle key with the NEW ID. This is how we support cross-muscle swaps.
+        // Example: activeExercises['core'] = 'hammer_curl_id'
+        Store.data.activeExercises[oldMuscle] = newId; 
         Store.save();
         
         const prog = Store.data.progression[newId] || { weight: 10, nextReps: '8-12' };
