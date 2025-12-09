@@ -1,6 +1,6 @@
 /**
- * StrengthOS - Complete Mobile PWA v18
- * Updates: Full Library Swap with Persistence
+ * StrengthOS - Complete Mobile PWA v19
+ * Updates: Bonus Workouts, Fixed Swap Logic, Clickable History, Graph Fix
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
@@ -141,10 +141,8 @@ const Coach = {
         }).filter(x => x !== null).slice(-10);
     },
 
-    // NEW: Get ALL exercises grouped by muscle for the Swap Modal
     getAllExercisesGrouped() {
         const groups = { 'Chest': [], 'Back': [], 'Shoulders': [], 'Legs': [], 'Arms': [], 'Core': [] };
-        // Helper to map muscle to group
         const getGroup = (m) => {
             if (['chest'].includes(m)) return 'Chest';
             if (['back'].includes(m)) return 'Back';
@@ -153,7 +151,6 @@ const Coach = {
             if (['biceps','triceps'].includes(m)) return 'Arms';
             return 'Core';
         };
-        
         Store.data.exercises.forEach(ex => {
             if (!Store.data.profile.wristPain || ex.joint !== 'wrist') {
                 const g = getGroup(ex.muscle);
@@ -179,7 +176,6 @@ const Coach = {
         muscles.forEach(m => {
             let exId = Store.data.activeExercises[m];
             let ex = Store.data.exercises.find(e => e.id === exId);
-            // If invalid or not set, pick default
             if (!ex || (wristPain && ex.joint === 'wrist')) {
                 const pool = Store.data.exercises.filter(e => e.muscle === m && (!wristPain || e.joint !== 'wrist'));
                 if (pool.length > 0) { ex = pool[Math.floor(Math.random() * pool.length)]; Store.data.activeExercises[m] = ex.id; }
@@ -228,12 +224,13 @@ const UI = {
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
         
-        const oldTimer = document.getElementById('timer-overlay'); const oldModal = document.getElementById('readiness-modal');
-        if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove();
+        const oldTimer = document.getElementById('timer-overlay'); const oldModal = document.getElementById('readiness-modal'); const oldSwap = document.getElementById('swap-modal'); const oldSummary = document.getElementById('summary-modal');
+        if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove(); if(oldSwap) oldSwap.remove(); if(oldSummary) oldSummary.remove();
 
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel today?</h3><p style="color:#666; margin-bottom:20px;">Be honest. The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
-        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml);
+        const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
+        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml + summaryHtml);
 
         this.navBtns.forEach(b => b.addEventListener('click', () => this.nav(b.dataset.target)));
         this.nav('dashboard');
@@ -256,29 +253,56 @@ const UI = {
     renderGuide() {
         this.pageTitle.innerText = 'Coach Logic';
         this.container.innerHTML = `
-            <div class="card">
-                <div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div>
-                <div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div>
-                <div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div>
-                <div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div>
-            </div>`;
+            <div class="card"><div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div><div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div><div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div><div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div></div>`;
     },
 
     renderDash() {
         this.pageTitle.innerText = 'Dashboard';
         const h = Store.data.history; const count = h.length;
-        const lastUp = [...h].reverse().find(s => s.type === 'upper');
-        const lastLow = [...h].reverse().find(s => s.type === 'lower');
-        const formatDate = (d) => d ? new Date(d).toLocaleDateString() : 'None';
+        const lastUpIndex = h.map((s, i) => s.type === 'upper' ? i : -1).filter(i => i !== -1).pop();
+        const lastLowIndex = h.map((s, i) => s.type === 'lower' ? i : -1).filter(i => i !== -1).pop();
+        const lastUp = lastUpIndex !== undefined ? h[lastUpIndex] : null;
+        const lastLow = lastLowIndex !== undefined ? h[lastLowIndex] : null;
+        const formatDate = (d) => d ? new Date(d).toLocaleDateString() : '--';
+
         const goals = Coach.generateWeeklyFocus();
         const clipboardHtml = goals.map(text => `<div class="clipboard-item"><div class="clipboard-check" onclick="this.classList.toggle('checked')"></div><div>${text}</div></div>`).join('');
+        
+        // Graph Logic
         const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
         const bars = last7Days.map(date => {
-            const dateStr = date.toLocaleDateString(); const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); 
-            const trained = h.some(session => new Date(session.date).toLocaleDateString() === dateStr);
+            const dateString = date.toDateString(); // Robust comparison
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); 
+            const trained = h.some(session => new Date(session.date).toDateString() === dateString);
             return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;"><div style="width:100%; background:${trained ? 'var(--primary)' : '#e2e8f0'}; height:${trained ? '100%' : '20%'}; border-radius:4px;"></div><span style="font-size:0.6rem; color:#888">${dayName}</span></div>`;
         }).join('');
-        this.container.innerHTML = `<div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus for You</div>${clipboardHtml}</div><div class="card"><h2>Overview</h2><div class="summary-grid"><div class="summary-box"><div class="summary-label">Last Upper</div><div class="summary-val">${lastUp ? formatDate(lastUp.date) : '--'}</div></div><div class="summary-box"><div class="summary-label">Last Lower</div><div class="summary-val">${lastLow ? formatDate(lastLow.date) : '--'}</div></div></div><p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p></div><div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>`;
+
+        this.container.innerHTML = `
+            <div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus for You</div>${clipboardHtml}</div>
+            <div class="card">
+                <h2>Overview</h2>
+                <div class="summary-grid">
+                    <div class="summary-box"><div class="summary-label">Last Upper</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastUpIndex})">${formatDate(lastUp?.date)}</div></div>
+                    <div class="summary-box"><div class="summary-label">Last Lower</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastLowIndex})">${formatDate(lastLow?.date)}</div></div>
+                </div>
+                <p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p>
+            </div>
+            <div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>`;
+    },
+
+    showSessionSummary(index) {
+        if (index === undefined || index === -1) return;
+        const s = Store.data.history[index];
+        const title = document.getElementById('summary-title');
+        const list = document.getElementById('summary-list');
+        const modal = document.getElementById('summary-modal');
+        
+        title.innerText = `${s.type.toUpperCase()} - ${new Date(s.date).toLocaleDateString()}`;
+        list.innerHTML = s.exercises.map(ex => {
+            const best = ex.sets.reduce((p, c) => (c.weight > p.weight) ? c : p, {weight:0, reps:0});
+            return `<div class="session-summary-item"><strong>${ex.name || 'Unknown'}</strong><span>Best: ${best.weight}lbs x ${best.reps}</span></div>`;
+        }).join('');
+        modal.classList.add('active');
     },
 
     renderWorkoutIntro() {
@@ -310,60 +334,51 @@ const UI = {
                 if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else { repVal = dataMap[`reps-${i}-${s}`] || ''; rirVal = dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2; }
                 return `<div class="set-row"><span style="font-size:0.8rem; color:#888">Set ${s}</span><input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${repVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><div class="rir-container"><div class="rir-header-row"><span class="rir-label">F</span><span class="rir-label">H</span><span class="rir-label">SP</span><span class="rir-label">E</span></div><div class="rir-selector" id="rir-box-${i}-${s}">${[0,1,2,3].map(r => `<div class="rir-btn ${rirVal == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}</div></div><input type="hidden" id="rir-${i}-${s}" value="${rirVal}"></div>`;
             }).join('');
-            return `<div class="card" id="card-${i}">${!isHistoryEdit ? `<button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>` : ''}${ex.note ? `<div class="toast">${ex.note}</div>` : ''}<h3>${ex.name}</h3><div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div><div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div><p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">Target Reps: ${ex.targetReps}</p>${setRows}</div>`;
+            
+            const cardClass = ex.isBonus ? "card bonus-card" : "card";
+            return `<div class="${cardClass}" id="card-${i}">${!isHistoryEdit && !ex.isBonus ? `<button class="swap-btn" onclick="UI.swapExercise(${i})">🔄</button>` : ''}${ex.note ? `<div class="toast">${ex.note}</div>` : ''}<h3>${ex.name} ${ex.isBonus ? ' (Bonus)' : ''}</h3><div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div><div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div><p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;">Target Reps: ${ex.targetReps}</p>${setRows}</div>`;
         }).join('');
         
-        let actionBtn = `<button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button> <button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>`;
+        let actionBtn = `<button class="btn-secondary btn-bonus" onclick="UI.addBonusExercise()">🎲 Add Bonus Exercise</button><div style="height:15px;"></div><button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button> <button class="btn-warning" onclick="UI.pauseSession()">Pause & Save</button>`;
         if (isHistoryEdit) actionBtn = `<button class="btn-primary" onclick="UI.saveEditedHistory()">Save Changes</button> <button class="btn-secondary" onclick="UI.renderHistoryManager()">Cancel</button>`;
         this.container.innerHTML = `${topHtml}${dateHeader}${legend}${exercisesHtml}${actionBtn}`;
         window.scrollTo(0,0);
     },
 
-    // NEW SWAP LOGIC: Show List
     swapExercise(index) {
-        this.scrapeAndSaveDraft();
-        const oldEx = this.currentPlan[index];
-        const allGrouped = Coach.getAllExercisesGrouped();
-        
-        let listHtml = '';
-        for (const [group, exercises] of Object.entries(allGrouped)) {
-            if (exercises.length > 0) {
-                listHtml += `<div class="swap-header">${group}</div>`;
-                listHtml += exercises.map(ex => `
-                    <div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${oldEx.muscle}')">
-                        <div><strong>${ex.name}</strong><small>${ex.pattern}</small></div>
-                        <span class="swap-select-btn">Select</span>
-                    </div>
-                `).join('');
-            }
-        }
-
-        const modalHtml = `
-            <div id="swap-modal" class="modal-overlay active">
-                <div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;">
-                    <div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="margin:0; font-size:1.1rem;">Swap ${oldEx.name}</h3>
-                        <div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').remove()">X</div>
-                    </div>
-                    <div class="swap-list" style="overflow-y:auto;">${listHtml}</div>
-                </div>
-            </div>`;
-        
-        const existing = document.getElementById('swap-modal'); if(existing) existing.remove();
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.scrapeAndSaveDraft(); const oldEx = this.currentPlan[index]; const allGrouped = Coach.getAllExercisesGrouped();
+        let listHtml = ''; for (const [group, exercises] of Object.entries(allGrouped)) { if (exercises.length > 0) { listHtml += `<div class="swap-header">${group}</div>` + exercises.map(ex => `<div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${oldEx.muscle}')"><div><strong>${ex.name}</strong><small>${ex.pattern}</small></div><span class="swap-select-btn">Select</span></div>`).join(''); } }
+        const modalHtml = `<div id="swap-modal" class="modal-overlay active"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap ${oldEx.name}</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').remove()">X</div></div><div class="swap-list" style="overflow-y:auto;">${listHtml}</div></div></div>`;
+        const existing = document.getElementById('swap-modal'); if(existing) existing.remove(); document.body.insertAdjacentHTML('beforeend', modalHtml);
     },
 
     selectSwap(index, newId, oldMuscle) {
         document.getElementById('swap-modal').remove();
         const newEx = Store.data.exercises.find(e => e.id === newId);
-        // Overwrite the OLD muscle key with the NEW ID. This is how we support cross-muscle swaps.
-        // Example: activeExercises['core'] = 'hammer_curl_id'
-        Store.data.activeExercises[oldMuscle] = newId; 
-        Store.save();
+        // FIX: Only update permanent preference if Muscle Group Matches
+        if (newEx.muscle === oldMuscle) {
+            Store.data.activeExercises[oldMuscle] = newId; 
+            Store.save();
+        }
         
         const prog = Store.data.progression[newId] || { weight: 10, nextReps: '8-12' };
-        this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped & Saved' };
+        this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped' };
         this.renderActiveSession(true);
+    },
+
+    addBonusExercise() {
+        this.scrapeAndSaveDraft();
+        const type = this.currentType; // 'upper' or 'lower'
+        let validMuscles = type === 'upper' ? ['biceps', 'triceps', 'shoulders', 'chest'] : ['calves', 'glutes', 'quads', 'hamstrings'];
+        const pool = Store.data.exercises.filter(e => validMuscles.includes(e.muscle));
+        if (pool.length > 0) {
+            const randomEx = pool[Math.floor(Math.random() * pool.length)];
+            const newExObj = { ...randomEx, targetWeight: 10, targetReps: '10-15', sets: 2, note: 'Bonus Pump!', isBonus: true };
+            this.currentPlan.push(newExObj);
+            this.renderActiveSession(true);
+        } else {
+            alert("No bonus exercises found.");
+        }
     },
 
     setRir(exIdx, setNum, val) {
@@ -384,7 +399,16 @@ const UI = {
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
-        const results = { date: new Date().toISOString(), type: this.currentType, exercises: this.currentPlan.map((ex, i) => { const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight; const setsData = []; for(let s=1; s<=ex.sets; s++) { setsData.push({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value), weight: w }); } return { id: ex.id, type: ex.type, sets: setsData }; }) };
+        // Filter out bonus exercises for history
+        const sessionExercises = this.currentPlan.filter(e => !e.isBonus).map((ex, i) => { 
+            const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight; 
+            const setsData = []; 
+            for(let s=1; s<=ex.sets; s++) { 
+                setsData.push({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value), weight: w }); 
+            } 
+            return { id: ex.id, type: ex.type, sets: setsData }; 
+        });
+        const results = { date: new Date().toISOString(), type: this.currentType, exercises: sessionExercises };
         Store.logSession(results); this.stopTimer(); alert("Great job!"); this.nav('dashboard');
     },
 
