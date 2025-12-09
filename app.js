@@ -1,10 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v19
- * Updates: Bonus Workouts, Fixed Swap Logic, Clickable History, Graph Fix
+ * StrengthOS - Complete Mobile PWA v22
+ * Updates: Cardio Day, Calendar Cardio Support, Summary Fixes
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
+const APP_VERSION = 'v22.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -81,22 +82,28 @@ const Coach = {
         const last7 = h.filter(s => new Date(s.date) > new Date(Date.now() - 7*86400000));
         const freqTarget = Store.data.profile.frequency;
         
-        if (last7.length < freqTarget) { items.push("📅 <strong>Consistency:</strong> You missed a target session recently. Goal: Just show up and punch the clock this week."); } 
+        // Filter out cardio for lifting consistency check
+        const liftingSessions = last7.filter(s => s.type !== 'cardio').length;
+        
+        if (liftingSessions < freqTarget) { items.push("📅 <strong>Consistency:</strong> You missed a target session recently. Goal: Just show up and punch the clock this week."); } 
         else { items.push("🔥 <strong>Streak:</strong> You are consistent! Keep this momentum."); }
 
         if (h.length > 0) {
-            const lastSession = h[h.length - 1];
-            const closeCall = lastSession.exercises.find(e => {
-                const best = e.sets.reduce((p,c) => c.reps > p.reps ? c : p, {reps:0});
-                return best.reps >= 10 && best.reps < 12;
-            });
-            if (closeCall) {
-                const exName = Store.data.exercises.find(e => e.id === closeCall.id)?.name || "Exercise";
-                items.push(`💪 <strong>The Push:</strong> You hit high reps on ${exName}. Focus on breathing and get 12 clean reps.`);
+            const lastSession = h.find(s => s.type !== 'cardio'); // Find last LIFTING session
+            if (lastSession) {
+                const closeCall = lastSession.exercises.find(e => {
+                    const best = e.sets.reduce((p,c) => c.reps > p.reps ? c : p, {reps:0});
+                    return best.reps >= 10 && best.reps < 12;
+                });
+                if (closeCall) {
+                    const exName = Store.data.exercises.find(e => e.id === closeCall.id)?.name || "Exercise";
+                    items.push(`💪 <strong>The Push:</strong> You hit high reps on ${exName}. Focus on breathing and get 12 clean reps.`);
+                }
             }
         }
 
-        const recent = h.slice(-3);
+        // Balance Check (Ignore Cardio)
+        const recent = h.filter(s => s.type !== 'cardio').slice(-3);
         const upperCount = recent.filter(s => s.type === 'upper').length;
         const lowerCount = recent.filter(s => s.type === 'lower').length;
         if (upperCount > lowerCount + 1) items.push("⚖️ <strong>Balance:</strong> Lower body volume is lagging. Prioritize your next Leg Day.");
@@ -105,6 +112,58 @@ const Coach = {
         if (h.length > 0 && h.length % 18 === 0) items.push("🛡️ <strong>Deload:</strong> Fatigue accumulation detected. We are lightening the load this week.");
         if (items.length === 0) items.push("✨ <strong>Form Focus:</strong> Control the eccentric (lowering) phase for 3 seconds on every rep.");
         return items.slice(0, 3);
+    },
+
+    generateCalendarData() {
+        const h = Store.data.history;
+        const freq = Store.data.profile.frequency; 
+        const patterns = { 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5] };
+        const schedule = patterns[freq] || [1, 3, 5];
+
+        const today = new Date();
+        const dayOfWeek = today.getDay(); 
+        const daysSinceLastMonday = dayOfWeek + 6; 
+        const startDate = new Date(today);
+        startDate.setDate(today.getDate() - daysSinceLastMonday);
+        startDate.setHours(0,0,0,0);
+
+        const calendarWeeks = [];
+        
+        for (let w = 0; w < 3; w++) {
+            const weekDays = [];
+            let weekLabel = w === 0 ? "Past Week" : (w === 1 ? "Current Week" : "Future Week");
+            
+            for (let d = 0; d < 7; d++) {
+                const currentDate = new Date(startDate);
+                currentDate.setDate(startDate.getDate() + (w * 7) + d);
+                const dateStr = currentDate.toDateString();
+                const isToday = dateStr === today.toDateString();
+                const isPast = currentDate < today;
+                
+                // Check if Workout Performed
+                const actual = h.find(s => new Date(s.date).toDateString() === dateStr);
+                const dayNum = currentDate.getDay(); 
+                const isScheduledDay = schedule.includes(dayNum);
+
+                let status = 'rest';
+                if (actual) {
+                    // NEW: Check if cardio
+                    status = actual.type === 'cardio' ? 'cardio' : 'done';
+                } else if (isScheduledDay) {
+                    if (isPast && !isToday) status = 'missed';
+                    else status = 'sched';
+                }
+
+                weekDays.push({ day: ['S','M','T','W','T','F','S'][dayNum], status: status, isToday: isToday });
+            }
+            calendarWeeks.push({ label: weekLabel, days: weekDays });
+        }
+        return calendarWeeks;
+    },
+
+    getExerciseName(id) {
+        const ex = Store.data.exercises.find(e => e.id === id);
+        return ex ? ex.name : 'Unknown Exercise';
     },
 
     detectPlateau(exId) {
@@ -160,6 +219,12 @@ const Coach = {
         return groups;
     },
 
+    getAlternatives(exId) {
+        const current = Store.data.exercises.find(e => e.id === exId);
+        if(!current) return [];
+        return Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
+    },
+
     generateWorkout(forcedType = null, readinessScore = 5) {
         const { frequency, wristPain } = Store.data.profile;
         const last = Store.data.history[Store.data.history.length - 1];
@@ -200,6 +265,8 @@ const Coach = {
     },
 
     updateProgression(session) {
+        if (session.type === 'cardio') return; // Ignore cardio for progression logic
+        
         session.exercises.forEach(res => {
             const lastSet = res.sets[res.sets.length - 1];
             const actualWeight = lastSet.weight || 0;
@@ -230,11 +297,12 @@ const UI = {
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel today?</h3><p style="color:#666; margin-bottom:20px;">Be honest. The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
         const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
-        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml + summaryHtml);
+        const swapHtml = `<div id="swap-modal" class="modal-overlay"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap Exercise</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').classList.remove('active')">X</div></div><div id="swap-list-container" class="swap-list" style="overflow-y:auto;"></div></div></div>`;
+        
+        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml + summaryHtml + swapHtml);
 
         this.navBtns.forEach(b => b.addEventListener('click', () => this.nav(b.dataset.target)));
         this.nav('dashboard');
-        
         this.container.addEventListener('input', (e) => { if (this.currentMode === 'workout' && this.editingHistoryIndex === null) this.scrapeAndSaveDraft(); });
     },
 
@@ -250,12 +318,6 @@ const UI = {
         if(view === 'settings') this.renderSettings();
     },
 
-    renderGuide() {
-        this.pageTitle.innerText = 'Coach Logic';
-        this.container.innerHTML = `
-            <div class="card"><div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div><div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div><div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div><div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div></div>`;
-    },
-
     renderDash() {
         this.pageTitle.innerText = 'Dashboard';
         const h = Store.data.history; const count = h.length;
@@ -268,26 +330,49 @@ const UI = {
         const goals = Coach.generateWeeklyFocus();
         const clipboardHtml = goals.map(text => `<div class="clipboard-item"><div class="clipboard-check" onclick="this.classList.toggle('checked')"></div><div>${text}</div></div>`).join('');
         
-        // Graph Logic
+        // Calendar Logic
+        const calData = Coach.generateCalendarData();
+        const calHtml = calData.map(week => `
+            <div class="cal-week">
+                <div class="cal-title">${week.label}</div>
+                <div class="cal-days">
+                    ${week.days.map(d => `
+                        <div class="cal-day ${d.isToday ? 'today' : ''}">
+                            <span>${d.day}</span>
+                            <div class="cal-dot ${d.status}"></div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+
+        // Last 7 Days Graph
         const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
         const bars = last7Days.map(date => {
-            const dateString = date.toDateString(); // Robust comparison
+            const dateString = date.toDateString(); 
             const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); 
             const trained = h.some(session => new Date(session.date).toDateString() === dateString);
             return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;"><div style="width:100%; background:${trained ? 'var(--primary)' : '#e2e8f0'}; height:${trained ? '100%' : '20%'}; border-radius:4px;"></div><span style="font-size:0.6rem; color:#888">${dayName}</span></div>`;
         }).join('');
 
         this.container.innerHTML = `
-            <div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus for You</div>${clipboardHtml}</div>
+            <div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus</div>${clipboardHtml}</div>
+            
             <div class="card">
-                <h2>Overview</h2>
+                <h2>Activity Calendar</h2>
+                <div class="calendar-wrapper">${calHtml}</div>
+            </div>
+
+            <div class="card">
+                <h2>History</h2>
                 <div class="summary-grid">
                     <div class="summary-box"><div class="summary-label">Last Upper</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastUpIndex})">${formatDate(lastUp?.date)}</div></div>
                     <div class="summary-box"><div class="summary-label">Last Lower</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastLowIndex})">${formatDate(lastLow?.date)}</div></div>
                 </div>
                 <p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p>
             </div>
-            <div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>`;
+            <div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>
+            <div style="text-align:center; color:#9ca3af; font-size:0.75rem; margin: 20px 0;">StrengthOS ${APP_VERSION}</div>`;
     },
 
     showSessionSummary(index) {
@@ -298,10 +383,18 @@ const UI = {
         const modal = document.getElementById('summary-modal');
         
         title.innerText = `${s.type.toUpperCase()} - ${new Date(s.date).toLocaleDateString()}`;
-        list.innerHTML = s.exercises.map(ex => {
-            const best = ex.sets.reduce((p, c) => (c.weight > p.weight) ? c : p, {weight:0, reps:0});
-            return `<div class="session-summary-item"><strong>${ex.name || 'Unknown'}</strong><span>Best: ${best.weight}lbs x ${best.reps}</span></div>`;
-        }).join('');
+        
+        // Handle Cardio vs Lifting
+        if (s.type === 'cardio') {
+            list.innerHTML = `<div class="session-summary-item"><strong>Cardio Session</strong><span>Completed</span></div>`;
+        } else {
+            list.innerHTML = s.exercises.map(ex => {
+                const name = Coach.getExerciseName(ex.id);
+                const setsInfo = ex.sets.map(set => `${set.reps}`).join(' x ');
+                const weight = ex.sets[0]?.weight || 0; 
+                return `<div class="session-summary-item"><strong>${name}</strong><span>${weight}lbs x ${setsInfo}</span></div>`;
+            }).join('');
+        }
         modal.classList.add('active');
     },
 
@@ -310,16 +403,37 @@ const UI = {
         const draft = Store.getDraft(); const last = Store.data.history[Store.data.history.length - 1];
         let primaryType = (last && last.type === 'upper') ? 'lower' : 'upper'; let altType = (primaryType === 'upper') ? 'lower' : 'upper';
         if (draft) { this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="border: 2px solid var(--warning);"><h3>Paused Session Found</h3><p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p><button class="btn-primary" style="background:var(--warning)" onclick="UI.resumeSession()">Resume Workout</button><button class="btn-secondary" onclick="UI.clearDraft()">Discard</button></div></div>`; } 
-        else { this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="text-align:center; padding: 30px 20px;"><div style="font-size:3rem; margin-bottom:10px;">💪</div><button class="btn-primary" style="margin-bottom: 15px;" onclick="UI.triggerReadiness('${primaryType}')">Today's Workout: ${primaryType.toUpperCase()}</button><button class="btn-secondary" style="font-size:0.9rem; padding: 10px;" onclick="UI.triggerReadiness('${altType}')">Alternative: ${altType.charAt(0).toUpperCase() + altType.slice(1)}</button></div></div>`; }
+        else { this.container.innerHTML = `
+            <div style="padding:20px 0;">
+                <div class="card" style="text-align:center; padding: 30px 20px;">
+                    <div style="font-size:3rem; margin-bottom:10px;">💪</div>
+                    <button class="btn-primary" style="margin-bottom: 15px;" onclick="UI.triggerReadiness('${primaryType}')">Today's Workout: ${primaryType.toUpperCase()}</button>
+                    <button class="btn-secondary" style="font-size:0.9rem; padding: 10px;" onclick="UI.triggerReadiness('${altType}')">Alternative: ${altType.charAt(0).toUpperCase() + altType.slice(1)}</button>
+                    <button class="btn-cardio" onclick="UI.finishCardioSession()">🏃 Cardio Day</button>
+                </div>
+            </div>`; }
     },
 
+    finishCardioSession() {
+        if(!confirm("Log today as Cardio Day?")) return;
+        const results = {
+            date: new Date().toISOString(),
+            type: 'cardio',
+            exercises: [] // No specific sets to log
+        };
+        Store.logSession(results);
+        alert("Cardio Session Logged!");
+        this.nav('dashboard');
+    },
+
+    // ... (Keep existing methods: clearDraft, resumeSession, triggerReadiness, confirmReadiness, startNewSession) ...
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
     triggerReadiness(type) { this.pendingWorkoutType = type; document.getElementById('readiness-modal').classList.add('active'); },
     confirmReadiness(score) { document.getElementById('readiness-modal').classList.remove('active'); this.startNewSession(this.pendingWorkoutType, score); },
     startNewSession(type, readiness) { const g = Coach.generateWorkout(type, readiness); this.currentPlan = g.exercises; this.currentType = g.type; this.isDeload = g.isDeload; this.currentStartTime = new Date().toISOString(); this.renderActiveSession(false); },
 
-    renderActiveSession(isResumeOrEdit) {
+    renderActiveSession(isResumeOrEdit) { /* ... Same as v19 with Bonus Button ... */
         const isHistoryEdit = this.editingHistoryIndex !== null;
         let dataMap = {}; if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
         let topHtml = this.isDeload ? `<div class="deload-banner">⚠️ <strong>Deload Week</strong><br>Weights reduced by 30%. Focus on recovery.</div>` : '';
@@ -348,12 +462,13 @@ const UI = {
     swapExercise(index) {
         this.scrapeAndSaveDraft(); const oldEx = this.currentPlan[index]; const allGrouped = Coach.getAllExercisesGrouped();
         let listHtml = ''; for (const [group, exercises] of Object.entries(allGrouped)) { if (exercises.length > 0) { listHtml += `<div class="swap-header">${group}</div>` + exercises.map(ex => `<div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${oldEx.muscle}')"><div><strong>${ex.name}</strong><small>${ex.pattern}</small></div><span class="swap-select-btn">Select</span></div>`).join(''); } }
-        const modalHtml = `<div id="swap-modal" class="modal-overlay active"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap ${oldEx.name}</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').remove()">X</div></div><div class="swap-list" style="overflow-y:auto;">${listHtml}</div></div></div>`;
-        const existing = document.getElementById('swap-modal'); if(existing) existing.remove(); document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById('swap-modal');
+        document.getElementById('swap-list-container').innerHTML = listHtml;
+        modal.classList.add('active');
     },
 
     selectSwap(index, newId, oldMuscle) {
-        document.getElementById('swap-modal').remove();
+        document.getElementById('swap-modal').classList.remove('active');
         const newEx = Store.data.exercises.find(e => e.id === newId);
         // FIX: Only update permanent preference if Muscle Group Matches
         if (newEx.muscle === oldMuscle) {
@@ -368,7 +483,7 @@ const UI = {
 
     addBonusExercise() {
         this.scrapeAndSaveDraft();
-        const type = this.currentType; // 'upper' or 'lower'
+        const type = this.currentType; 
         let validMuscles = type === 'upper' ? ['biceps', 'triceps', 'shoulders', 'chest'] : ['calves', 'glutes', 'quads', 'hamstrings'];
         const pool = Store.data.exercises.filter(e => validMuscles.includes(e.muscle));
         if (pool.length > 0) {
@@ -381,15 +496,9 @@ const UI = {
         }
     },
 
-    setRir(exIdx, setNum, val) {
-        document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected'));
-        document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected');
-        document.getElementById(`rir-${exIdx}-${setNum}`).value = val;
-        if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(120); }
-    },
-
-    startTimer(seconds) {
-        const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
+    // ... (Keep existing Timer, Finish, Settings, etc.) ...
+    setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(120); } },
+    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
         if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds;
         const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
     },
@@ -399,7 +508,6 @@ const UI = {
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
-        // Filter out bonus exercises for history
         const sessionExercises = this.currentPlan.filter(e => !e.isBonus).map((ex, i) => { 
             const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight; 
             const setsData = []; 
@@ -411,43 +519,17 @@ const UI = {
         const results = { date: new Date().toISOString(), type: this.currentType, exercises: sessionExercises };
         Store.logSession(results); this.stopTimer(); alert("Great job!"); this.nav('dashboard');
     },
-
-    renderLib() {
-        this.pageTitle.innerText = 'Exercise Library';
-        const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'], 'Arms': ['biceps', 'triceps', 'arms'], 'Core': ['core'] };
-        let html = '<p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Tap an exercise to view progress.</p>';
-        for (const [category, muscles] of Object.entries(groups)) {
-            const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle));
-            if (exercises.length > 0) { html += `<h3 class="lib-header">${category}</h3>` + exercises.map(e => `<div class="card clickable" onclick="UI.toggleChart(this, '${e.id}')"><div style="display:flex; justify-content:space-between;"><strong>${e.name}</strong><span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span></div><div class="chart-container" id="chart-${e.id}"></div></div>`).join(''); }
-        }
-        this.container.innerHTML = html;
-    },
-
+    renderLib() { this.pageTitle.innerText = 'Exercise Library'; const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'], 'Arms': ['biceps', 'triceps', 'arms'], 'Core': ['core'] }; let html = '<p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Tap an exercise to view progress.</p>'; for (const [category, muscles] of Object.entries(groups)) { const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle)); if (exercises.length > 0) { html += `<h3 class="lib-header">${category}</h3>` + exercises.map(e => `<div class="card clickable" onclick="UI.toggleChart(this, '${e.id}')"><div style="display:flex; justify-content:space-between;"><strong>${e.name}</strong><span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span></div><div class="chart-container" id="chart-${e.id}"></div></div>`).join(''); } } this.container.innerHTML = html; },
     toggleChart(card, exId) { const container = card.querySelector('.chart-container'); if (card.classList.contains('expanded')) { card.classList.remove('expanded'); } else { document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded')); card.classList.add('expanded'); this.renderChart(exId, container); } },
-    renderChart(exId, container) {
-        const data = Coach.getChartData(exId); if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-top:40px; color:#888;">Not enough data yet.</p>'; return; }
-        const h = 150, w = container.offsetWidth || 300; const vals = data.map(d => d.val); const min = Math.min(...vals) * 0.9; const max = Math.max(...vals) * 1.1; const range = max - min;
-        const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${h - ((d.val - min) / range) * h}`).join(' ');
-        container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${w} ${h}"><polyline class="chart-line" points="${points}" />${data.map((d, i) => `<circle cx="${(i / (data.length - 1)) * w}" cy="${h - ((d.val - min) / range) * h}" r="4" class="chart-dot" /><text x="${(i / (data.length - 1)) * w}" y="${h - ((d.val - min) / range) * h - 10}" text-anchor="middle" class="chart-label">${d.val}</text>`).join('')}</svg>`;
-    },
-
+    renderChart(exId, container) { const data = Coach.getChartData(exId); if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-top:40px; color:#888;">Not enough data yet.</p>'; return; } const h = 150, w = container.offsetWidth || 300; const vals = data.map(d => d.val); const min = Math.min(...vals) * 0.9; const max = Math.max(...vals) * 1.1; const range = max - min; const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${h - ((d.val - min) / range) * h}`).join(' '); container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${w} ${h}"><polyline class="chart-line" points="${points}" />${data.map((d, i) => `<circle cx="${(i / (data.length - 1)) * w}" cy="${h - ((d.val - min) / range) * h}" r="4" class="chart-dot" /><text x="${(i / (data.length - 1)) * w}" y="${h - ((d.val - min) / range) * h - 10}" text-anchor="middle" class="chart-label">${d.val}</text>`).join('')}</svg>`; },
     renderSettings() { this.pageTitle.innerText = 'Settings'; const p = Store.data.profile; this.container.innerHTML = `<div class="card"><h2>Account</h2><button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button></div><div class="card"><label>Days Per Week</label><select id="s-freq"><option value="2" ${p.frequency==2?'selected':''}>2 Days</option><option value="3" ${p.frequency==3?'selected':''}>3 Days</option><option value="4" ${p.frequency==4?'selected':''}>4 Days</option></select><label>Emphasis</label><select id="s-emph"><option value="upper" ${p.emphasis=='upper'?'selected':''}>Upper Body</option><option value="lower" ${p.emphasis=='lower'?'selected':''}>Lower Body</option></select><button class="btn-primary" style="margin-top:15px" onclick="UI.saveSet()">Save Profile</button></div><div class="card"><button class="btn-secondary" onclick="UI.export()">Export Data</button></div>`; },
-    renderHistoryManager() {
-        this.pageTitle.innerText = 'History Manager'; const recent = Store.data.history.map((h, i) => ({...h, origIndex: i})).reverse().slice(0, 3);
-        if (recent.length === 0) { this.container.innerHTML = '<div class="card"><p>No history found.</p><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back</button></div>'; return; }
-        const html = recent.map(item => `<div class="history-item"><div class="history-info"><strong>${new Date(item.date).toLocaleDateString()}</strong><span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span></div><div class="history-actions"><button class="btn-sm" onclick="UI.editWorkout(${item.origIndex})">Edit Workout</button><button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button></div></div>`).join('');
-        this.container.innerHTML = `<div style="margin-bottom:20px;">${html}</div><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back to Settings</button>`;
-    },
+    renderHistoryManager() { this.pageTitle.innerText = 'History Manager'; const recent = Store.data.history.map((h, i) => ({...h, origIndex: i})).reverse().slice(0, 3); if (recent.length === 0) { this.container.innerHTML = '<div class="card"><p>No history found.</p><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back</button></div>'; return; } const html = recent.map(item => `<div class="history-item"><div class="history-info"><strong>${new Date(item.date).toLocaleDateString()}</strong><span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span></div><div class="history-actions"><button class="btn-sm" onclick="UI.editWorkout(${item.origIndex})">Edit Workout</button><button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button></div></div>`).join(''); this.container.innerHTML = `<div style="margin-bottom:20px;">${html}</div><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back to Settings</button>`; },
     deleteHistory(index) { if(confirm("Are you sure?")) { Store.deleteSession(index); this.renderHistoryManager(); }},
     editWorkout(index) { const s = Store.data.history[index]; this.editingHistoryIndex = index; this.currentPlan = s.exercises; this.currentType = s.type; this.renderActiveSession(true); },
-    saveEditedHistory() {
-        const index = this.editingHistoryIndex; if (index === null) return;
-        const newDate = document.getElementById('edit-date-input').value ? new Date(document.getElementById('edit-date-input').value).toISOString() : Store.data.history[index].date;
-        const updatedSession = { date: newDate, type: this.currentType, exercises: this.currentPlan.map((ex, i) => ({ id: ex.id, type: ex.type, sets: ex.sets.map((_, sIdx) => ({ reps: Number(document.getElementById(`reps-${i}-${sIdx+1}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${sIdx+1}`).value), weight: Number(document.getElementById(`weight-${i}`).value) || 0 })) })) };
-        Store.updateHistorySession(index, updatedSession); alert("Updated!"); this.nav('settings');
-    },
+    saveEditedHistory() { const index = this.editingHistoryIndex; if (index === null) return; const newDate = document.getElementById('edit-date-input').value ? new Date(document.getElementById('edit-date-input').value).toISOString() : Store.data.history[index].date; const updatedSession = { date: newDate, type: this.currentType, exercises: this.currentPlan.map((ex, i) => ({ id: ex.id, type: ex.type, sets: ex.sets.map((_, sIdx) => ({ reps: Number(document.getElementById(`reps-${i}-${sIdx+1}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${sIdx+1}`).value), weight: Number(document.getElementById(`weight-${i}`).value) || 0 })) })) }; Store.updateHistorySession(index, updatedSession); alert("Updated!"); this.nav('settings'); },
     saveSet() { Store.data.profile.frequency = Number(document.getElementById('s-freq').value); Store.data.profile.emphasis = document.getElementById('s-emph').value; Store.save(); alert("Saved!"); },
-    export() { const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(Store.data)); const a = document.createElement('a'); a.href = data; a.download = 'strengthos_backup.json'; document.body.appendChild(a); a.click(); a.remove(); }
+    export() { const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(Store.data)); const a = document.createElement('a'); a.href = data; a.download = 'strengthos_backup.json'; document.body.appendChild(a); a.click(); a.remove(); },
+    renderGuide() { this.pageTitle.innerText = 'Coach Logic'; this.container.innerHTML = `<div class="card"><div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div><div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div><div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div><div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div></div>`; }
 };
 
 window.addEventListener('DOMContentLoaded', () => { Store.init(); UI.init(); });
