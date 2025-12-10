@@ -1,11 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v22
- * Updates: Cardio Day, Calendar Cardio Support, Summary Fixes
+ * StrengthOS - Complete Mobile PWA v23
+ * Updates: Forced Emphasis, Core Workout, UI Tweaks
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v22.0';
+const APP_VERSION = 'v23.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -39,9 +39,14 @@ const DEFAULT_EXERCISES = [
     { id: 'skullcrusher', name: 'DB Skullcrushers', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'kickback', name: 'Tricep Kickbacks', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'bench_dip', name: 'Bench Dips', muscle: 'triceps', pattern: 'push_iso', type: 'bodyweight', joint: 'shoulder' },
-    // Core
+    // Core (Expanded)
     { id: 'plank', name: 'Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
-    { id: 'russian', name: 'Russian Twist', muscle: 'core', pattern: 'iso_core', type: 'dumbbell', joint: 'low_back' }
+    { id: 'russian', name: 'Russian Twist', muscle: 'core', pattern: 'iso_core', type: 'dumbbell', joint: 'low_back' },
+    { id: 'leg_raise', name: 'Leg Raises', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'hip' },
+    { id: 'dead_bug', name: 'Dead Bugs', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'core' },
+    { id: 'mtn_climber', name: 'Mountain Climbers', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
+    { id: 'bicycle', name: 'Bicycle Crunches', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'core' },
+    { id: 'side_plank', name: 'Side Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' }
 ];
 
 const initialState = {
@@ -58,7 +63,7 @@ const Store = {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             this.data = JSON.parse(stored);
-            if (!this.data.exercises || this.data.exercises.length < 10) {
+            if (!this.data.exercises || this.data.exercises.length < 15) {
                 this.data.exercises = DEFAULT_EXERCISES; 
             }
             if (!this.data.activeExercises) this.data.activeExercises = {};
@@ -82,14 +87,13 @@ const Coach = {
         const last7 = h.filter(s => new Date(s.date) > new Date(Date.now() - 7*86400000));
         const freqTarget = Store.data.profile.frequency;
         
-        // Filter out cardio for lifting consistency check
-        const liftingSessions = last7.filter(s => s.type !== 'cardio').length;
+        const liftingSessions = last7.filter(s => s.type !== 'cardio' && s.type !== 'core').length;
         
         if (liftingSessions < freqTarget) { items.push("📅 <strong>Consistency:</strong> You missed a target session recently. Goal: Just show up and punch the clock this week."); } 
         else { items.push("🔥 <strong>Streak:</strong> You are consistent! Keep this momentum."); }
 
         if (h.length > 0) {
-            const lastSession = h.find(s => s.type !== 'cardio'); // Find last LIFTING session
+            const lastSession = h.find(s => s.type !== 'cardio' && s.type !== 'core'); 
             if (lastSession) {
                 const closeCall = lastSession.exercises.find(e => {
                     const best = e.sets.reduce((p,c) => c.reps > p.reps ? c : p, {reps:0});
@@ -102,8 +106,7 @@ const Coach = {
             }
         }
 
-        // Balance Check (Ignore Cardio)
-        const recent = h.filter(s => s.type !== 'cardio').slice(-3);
+        const recent = h.filter(s => s.type !== 'cardio' && s.type !== 'core').slice(-3);
         const upperCount = recent.filter(s => s.type === 'upper').length;
         const lowerCount = recent.filter(s => s.type === 'lower').length;
         if (upperCount > lowerCount + 1) items.push("⚖️ <strong>Balance:</strong> Lower body volume is lagging. Prioritize your next Leg Day.");
@@ -140,15 +143,15 @@ const Coach = {
                 const isToday = dateStr === today.toDateString();
                 const isPast = currentDate < today;
                 
-                // Check if Workout Performed
                 const actual = h.find(s => new Date(s.date).toDateString() === dateStr);
                 const dayNum = currentDate.getDay(); 
                 const isScheduledDay = schedule.includes(dayNum);
 
                 let status = 'rest';
                 if (actual) {
-                    // NEW: Check if cardio
-                    status = actual.type === 'cardio' ? 'cardio' : 'done';
+                    if (actual.type === 'cardio') status = 'cardio';
+                    else if (actual.type === 'core') status = 'core';
+                    else status = 'done';
                 } else if (isScheduledDay) {
                     if (isPast && !isToday) status = 'missed';
                     else status = 'sched';
@@ -226,9 +229,44 @@ const Coach = {
     },
 
     generateWorkout(forcedType = null, readinessScore = 5) {
-        const { frequency, wristPain } = Store.data.profile;
-        const last = Store.data.history[Store.data.history.length - 1];
-        let type = forcedType ? forcedType : (frequency >= 3 ? ((last && last.type === 'upper') ? 'lower' : 'upper') : 'full');
+        const { frequency, emphasis, wristPain } = Store.data.profile;
+        const history = Store.data.history;
+        
+        let type = forcedType;
+        
+        // --- FORCED EMPHASIS LOGIC ---
+        if (!type && frequency >= 3) {
+            // Get last 2 lifting sessions
+            const lastLifts = history.filter(s => s.type === 'upper' || s.type === 'lower').slice(-2);
+            
+            // Default rotation if no history
+            type = 'upper';
+            
+            if (lastLifts.length > 0) {
+                const last = lastLifts[lastLifts.length - 1];
+                const prev = lastLifts.length > 1 ? lastLifts[lastLifts.length - 2] : null;
+                
+                // Rotation logic: Upper -> Lower -> Upper -> Lower
+                let nextRotation = (last.type === 'upper') ? 'lower' : 'upper';
+                
+                // Emphasis Override
+                if (emphasis === 'upper') {
+                    // Pattern: U -> L -> U
+                    if (last.type === 'lower') nextRotation = 'upper'; // L -> U
+                    if (last.type === 'upper' && prev && prev.type === 'lower') nextRotation = 'upper'; // L -> U -> U
+                }
+                
+                if (emphasis === 'lower') {
+                    // Pattern: L -> U -> L
+                    if (last.type === 'upper') nextRotation = 'lower';
+                    if (last.type === 'lower' && prev && prev.type === 'upper') nextRotation = 'lower';
+                }
+                
+                type = nextRotation;
+            }
+        }
+        if (!type) type = 'full';
+
         const sessionCount = Store.data.history.length;
         const isDeload = (sessionCount > 0 && sessionCount % 18 === 0);
 
@@ -264,8 +302,22 @@ const Coach = {
         };
     },
 
+    generateCoreWorkout() {
+        const coreEx = Store.data.exercises.filter(e => e.muscle === 'core');
+        // Shuffle and pick 5
+        const shuffled = coreEx.sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, 5);
+        return selected.map(ex => ({
+            ...ex,
+            targetWeight: 0,
+            targetReps: '45 sec',
+            sets: 2,
+            note: 'Circuit Mode'
+        }));
+    },
+
     updateProgression(session) {
-        if (session.type === 'cardio') return; // Ignore cardio for progression logic
+        if (session.type === 'cardio' || session.type === 'core') return;
         
         session.exercises.forEach(res => {
             const lastSet = res.sets[res.sets.length - 1];
@@ -298,8 +350,9 @@ const UI = {
         const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel today?</h3><p style="color:#666; margin-bottom:20px;">Be honest. The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
         const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
         const swapHtml = `<div id="swap-modal" class="modal-overlay"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap Exercise</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').classList.remove('active')">X</div></div><div id="swap-list-container" class="swap-list" style="overflow-y:auto;"></div></div></div>`;
+        const footerHtml = `<div class="version-footer">StrengthOS ${APP_VERSION}</div>`;
         
-        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml + summaryHtml + swapHtml);
+        document.body.insertAdjacentHTML('beforeend', timerHtml + modalHtml + summaryHtml + swapHtml + footerHtml);
 
         this.navBtns.forEach(b => b.addEventListener('click', () => this.nav(b.dataset.target)));
         this.nav('dashboard');
@@ -371,8 +424,7 @@ const UI = {
                 </div>
                 <p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p>
             </div>
-            <div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>
-            <div style="text-align:center; color:#9ca3af; font-size:0.75rem; margin: 20px 0;">StrengthOS ${APP_VERSION}</div>`;
+            <div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>`;
     },
 
     showSessionSummary(index) {
@@ -384,10 +436,9 @@ const UI = {
         
         title.innerText = `${s.type.toUpperCase()} - ${new Date(s.date).toLocaleDateString()}`;
         
-        // Handle Cardio vs Lifting
-        if (s.type === 'cardio') {
-            list.innerHTML = `<div class="session-summary-item"><strong>Cardio Session</strong><span>Completed</span></div>`;
-        } else {
+        if (s.type === 'cardio') { list.innerHTML = `<div class="session-summary-item"><strong>Cardio Session</strong><span>Completed</span></div>`; }
+        else if (s.type === 'core') { list.innerHTML = `<div class="session-summary-item"><strong>Core Workout</strong><span>Completed</span></div>`; }
+        else {
             list.innerHTML = s.exercises.map(ex => {
                 const name = Coach.getExerciseName(ex.id);
                 const setsInfo = ex.sets.map(set => `${set.reps}`).join(' x ');
@@ -409,6 +460,7 @@ const UI = {
                     <div style="font-size:3rem; margin-bottom:10px;">💪</div>
                     <button class="btn-primary" style="margin-bottom: 15px;" onclick="UI.triggerReadiness('${primaryType}')">Today's Workout: ${primaryType.toUpperCase()}</button>
                     <button class="btn-secondary" style="font-size:0.9rem; padding: 10px;" onclick="UI.triggerReadiness('${altType}')">Alternative: ${altType.charAt(0).toUpperCase() + altType.slice(1)}</button>
+                    <button class="btn-core" onclick="UI.triggerReadiness('core')">🔥 Core Workout</button>
                     <button class="btn-cardio" onclick="UI.finishCardioSession()">🏃 Cardio Day</button>
                 </div>
             </div>`; }
@@ -416,24 +468,30 @@ const UI = {
 
     finishCardioSession() {
         if(!confirm("Log today as Cardio Day?")) return;
-        const results = {
-            date: new Date().toISOString(),
-            type: 'cardio',
-            exercises: [] // No specific sets to log
-        };
-        Store.logSession(results);
-        alert("Cardio Session Logged!");
-        this.nav('dashboard');
+        const results = { date: new Date().toISOString(), type: 'cardio', exercises: [] };
+        Store.logSession(results); alert("Cardio Session Logged!"); this.nav('dashboard');
     },
 
-    // ... (Keep existing methods: clearDraft, resumeSession, triggerReadiness, confirmReadiness, startNewSession) ...
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
     triggerReadiness(type) { this.pendingWorkoutType = type; document.getElementById('readiness-modal').classList.add('active'); },
     confirmReadiness(score) { document.getElementById('readiness-modal').classList.remove('active'); this.startNewSession(this.pendingWorkoutType, score); },
-    startNewSession(type, readiness) { const g = Coach.generateWorkout(type, readiness); this.currentPlan = g.exercises; this.currentType = g.type; this.isDeload = g.isDeload; this.currentStartTime = new Date().toISOString(); this.renderActiveSession(false); },
+    
+    startNewSession(type, readiness) { 
+        let g;
+        if (type === 'core') {
+            g = { exercises: Coach.generateCoreWorkout(), type: 'core', isDeload: false };
+        } else {
+            g = Coach.generateWorkout(type, readiness);
+        }
+        this.currentPlan = g.exercises;
+        this.currentType = g.type;
+        this.isDeload = g.isDeload;
+        this.currentStartTime = new Date().toISOString();
+        this.renderActiveSession(false);
+    },
 
-    renderActiveSession(isResumeOrEdit) { /* ... Same as v19 with Bonus Button ... */
+    renderActiveSession(isResumeOrEdit) { /* ... Same as v19 ... */
         const isHistoryEdit = this.editingHistoryIndex !== null;
         let dataMap = {}; if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
         let topHtml = this.isDeload ? `<div class="deload-banner">⚠️ <strong>Deload Week</strong><br>Weights reduced by 30%. Focus on recovery.</div>` : '';
@@ -496,13 +554,8 @@ const UI = {
         }
     },
 
-    // ... (Keep existing Timer, Finish, Settings, etc.) ...
     setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(120); } },
-    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
-        if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds;
-        const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
-    },
-
+    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active'); if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds; const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000); },
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
     scrapeAndSaveDraft() { const inputs = {}; document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; }); Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs }); },
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
