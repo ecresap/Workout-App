@@ -48,8 +48,15 @@
 
     <script src="app.js"></script>
     <script>
+        // Updated registration path to be more robust for GitHub Pages
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./service-worker.js').catch(err => console.log(err));
+            navigator.serviceWorker.register('service-worker.js')
+                .then(reg => {
+                    // Check for updates on page load
+                    reg.update();
+                    console.log('SW Registered');
+                })
+                .catch(err => console.log('SW Error:', err));
         }
     </script>
 </body>
