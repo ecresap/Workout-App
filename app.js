@@ -1,11 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v23
- * Updates: Forced Emphasis, Core Workout, UI Tweaks
+ * StrengthOS - Complete Mobile PWA v25
+ * Updates: Enhanced "Last" history display format
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v23.0';
+const APP_VERSION = 'v25.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -39,14 +39,19 @@ const DEFAULT_EXERCISES = [
     { id: 'skullcrusher', name: 'DB Skullcrushers', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'kickback', name: 'Tricep Kickbacks', muscle: 'triceps', pattern: 'push_iso', type: 'dumbbell', joint: 'elbow' },
     { id: 'bench_dip', name: 'Bench Dips', muscle: 'triceps', pattern: 'push_iso', type: 'bodyweight', joint: 'shoulder' },
-    // Core (Expanded)
+    // Core (Expanded - 12 Total)
     { id: 'plank', name: 'Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
     { id: 'russian', name: 'Russian Twist', muscle: 'core', pattern: 'iso_core', type: 'dumbbell', joint: 'low_back' },
     { id: 'leg_raise', name: 'Leg Raises', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'hip' },
     { id: 'dead_bug', name: 'Dead Bugs', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'core' },
     { id: 'mtn_climber', name: 'Mountain Climbers', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
     { id: 'bicycle', name: 'Bicycle Crunches', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'core' },
-    { id: 'side_plank', name: 'Side Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' }
+    { id: 'side_plank', name: 'Side Plank', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' },
+    { id: 'superman', name: 'Supermans', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'low_back' },
+    { id: 'bird_dog', name: 'Bird Dogs', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'low_back' },
+    { id: 'hollow_hold', name: 'Hollow Body Hold', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'core' },
+    { id: 'flutter_kicks', name: 'Flutter Kicks', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'hip' },
+    { id: 'reverse_snow', name: 'Rev. Snow Angels', muscle: 'core', pattern: 'iso_core', type: 'bodyweight', joint: 'shoulder' }
 ];
 
 const initialState = {
@@ -63,7 +68,7 @@ const Store = {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             this.data = JSON.parse(stored);
-            if (!this.data.exercises || this.data.exercises.length < 15) {
+            if (!this.data.exercises || this.data.exercises.length < 25) {
                 this.data.exercises = DEFAULT_EXERCISES; 
             }
             if (!this.data.activeExercises) this.data.activeExercises = {};
@@ -181,13 +186,16 @@ const Coach = {
         return stalled ? "Plateau Detected: 3 sessions without progress." : null;
     },
 
+    // UPDATED: Use detailed sets formatting
     getHistoryString(exId) {
         const hist = Store.data.history;
         for (let i = hist.length - 1; i >= 0; i--) {
             const exData = hist[i].exercises.find(e => e.id === exId);
-            if (exData) {
-                const best = exData.sets.reduce((p, c) => (c.weight > p.weight) ? c : (c.weight === p.weight && c.reps > p.reps ? c : p), {weight:0, reps:0, rir:0});
-                return `Last: ${best.weight}lbs x ${best.reps} (RIR ${best.rir})`;
+            if (exData && exData.sets && exData.sets.length > 0) {
+                // Format: Weight x R1 x R2 x R3
+                const weight = exData.sets[0].weight;
+                const repsStr = exData.sets.map(s => s.reps).join(' x ');
+                return `Last: ${weight}lbs x ${repsStr}`;
             }
         }
         return "New Exercise";
@@ -234,34 +242,21 @@ const Coach = {
         
         let type = forcedType;
         
-        // --- FORCED EMPHASIS LOGIC ---
         if (!type && frequency >= 3) {
-            // Get last 2 lifting sessions
             const lastLifts = history.filter(s => s.type === 'upper' || s.type === 'lower').slice(-2);
-            
-            // Default rotation if no history
             type = 'upper';
-            
             if (lastLifts.length > 0) {
                 const last = lastLifts[lastLifts.length - 1];
                 const prev = lastLifts.length > 1 ? lastLifts[lastLifts.length - 2] : null;
-                
-                // Rotation logic: Upper -> Lower -> Upper -> Lower
                 let nextRotation = (last.type === 'upper') ? 'lower' : 'upper';
-                
-                // Emphasis Override
                 if (emphasis === 'upper') {
-                    // Pattern: U -> L -> U
-                    if (last.type === 'lower') nextRotation = 'upper'; // L -> U
-                    if (last.type === 'upper' && prev && prev.type === 'lower') nextRotation = 'upper'; // L -> U -> U
+                    if (last.type === 'lower') nextRotation = 'upper'; 
+                    if (last.type === 'upper' && prev && prev.type === 'lower') nextRotation = 'upper'; 
                 }
-                
                 if (emphasis === 'lower') {
-                    // Pattern: L -> U -> L
                     if (last.type === 'upper') nextRotation = 'lower';
                     if (last.type === 'lower' && prev && prev.type === 'upper') nextRotation = 'lower';
                 }
-                
                 type = nextRotation;
             }
         }
@@ -304,7 +299,6 @@ const Coach = {
 
     generateCoreWorkout() {
         const coreEx = Store.data.exercises.filter(e => e.muscle === 'core');
-        // Shuffle and pick 5
         const shuffled = coreEx.sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 5);
         return selected.map(ex => ({
@@ -383,7 +377,6 @@ const UI = {
         const goals = Coach.generateWeeklyFocus();
         const clipboardHtml = goals.map(text => `<div class="clipboard-item"><div class="clipboard-check" onclick="this.classList.toggle('checked')"></div><div>${text}</div></div>`).join('');
         
-        // Calendar Logic
         const calData = Coach.generateCalendarData();
         const calHtml = calData.map(week => `
             <div class="cal-week">
@@ -399,7 +392,6 @@ const UI = {
             </div>
         `).join('');
 
-        // Last 7 Days Graph
         const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
         const bars = last7Days.map(date => {
             const dateString = date.toDateString(); 
@@ -491,7 +483,7 @@ const UI = {
         this.renderActiveSession(false);
     },
 
-    renderActiveSession(isResumeOrEdit) { /* ... Same as v19 ... */
+    renderActiveSession(isResumeOrEdit) {
         const isHistoryEdit = this.editingHistoryIndex !== null;
         let dataMap = {}; if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
         let topHtml = this.isDeload ? `<div class="deload-banner">⚠️ <strong>Deload Week</strong><br>Weights reduced by 30%. Focus on recovery.</div>` : '';
@@ -555,7 +547,11 @@ const UI = {
     },
 
     setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(120); } },
-    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active'); if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds; const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000); },
+    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
+        if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds;
+        const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
+    },
+
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
     scrapeAndSaveDraft() { const inputs = {}; document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; }); Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs }); },
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
