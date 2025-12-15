@@ -1,11 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v32
- * Updates: 1min Timer, System Notifications, 2-Session History
+ * StrengthOS - Complete Mobile PWA v33
+ * Updates: Customizable Rest Timer
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v32.0';
+const APP_VERSION = 'v33.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -56,7 +56,7 @@ const DEFAULT_EXERCISES = [
 ];
 
 const initialState = {
-    profile: { age: 40, frequency: 3, emphasis: 'upper', wristPain: false },
+    profile: { age: 40, frequency: 3, emphasis: 'upper', wristPain: false, timerDuration: 60 },
     history: [],
     progression: {}, 
     activeExercises: {}, 
@@ -73,6 +73,7 @@ const Store = {
                 this.data.exercises = DEFAULT_EXERCISES; 
             }
             if (!this.data.activeExercises) this.data.activeExercises = {};
+            if (!this.data.profile.timerDuration) this.data.profile.timerDuration = 60; // Default to 60s if not set
         } else {
             this.data = initialState;
             this.save();
@@ -158,7 +159,7 @@ const Coach = {
 
                 if (actual) {
                     if (actual.type === 'cardio') { status = 'cardio'; label = 'C'; }
-                    else if (actual.type === 'core') { status = 'core'; label = '🔥'; }
+                    else if (actual.type === 'core') { status = 'core'; label = 'F'; }
                     else if (actual.type === 'upper') { status = 'done'; label = 'U'; }
                     else if (actual.type === 'lower') { status = 'done'; label = 'L'; }
                     else { status = 'done'; label = '✓'; }
@@ -244,7 +245,9 @@ const Coach = {
     },
 
     generateWorkout(forcedType = null, readinessScore = 5) {
-        const { frequency, wristPain } = Store.data.profile;
+        // Simple generation based on forcedType (Upper/Lower)
+        // No more rotation logic here since buttons are static
+        const { wristPain } = Store.data.profile;
         let type = forcedType || 'full';
         
         const sessionCount = Store.data.history.length;
@@ -395,8 +398,8 @@ const UI = {
             <div style="padding:20px 0;">
                 <div class="card" style="text-align:center; padding: 30px 20px;">
                     <div style="font-size:3rem; margin-bottom:10px;">💪</div>
-                    <button class="btn-primary" onclick="UI.triggerReadiness('upper')">💪 Upper Body</button>
-                    <button class="btn-primary" onclick="UI.triggerReadiness('lower')">🦵 Lower Body</button>
+                    <button class="btn-primary" onclick="UI.triggerReadiness('upper')">Upper Workout</button>
+                    <button class="btn-primary" onclick="UI.triggerReadiness('lower')">Lower Workout</button>
                     <button class="btn-core" onclick="UI.triggerReadiness('core')">🔥 Core Workout</button>
                     <button class="btn-cardio" onclick="UI.finishCardioSession()">🏃 Cardio Day</button>
                 </div>
@@ -414,7 +417,6 @@ const UI = {
     triggerReadiness(type) { 
         this.pendingWorkoutType = type; 
         document.getElementById('readiness-modal').classList.add('active'); 
-        // REQUEST PERMISSION HERE
         if (Notification.permission === "default") {
             Notification.requestPermission();
         }
@@ -472,7 +474,6 @@ const UI = {
     selectSwap(index, newId, oldMuscle) {
         document.getElementById('swap-modal').classList.remove('active');
         const newEx = Store.data.exercises.find(e => e.id === newId);
-        // FIX: Only update permanent preference if Muscle Group Matches
         if (newEx.muscle === oldMuscle) {
             Store.data.activeExercises[oldMuscle] = newId; 
             Store.save();
@@ -498,16 +499,36 @@ const UI = {
         }
     },
 
-    setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(60); } }, // Updated to 60
-    startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
-        if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds;
-        const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; 
-        if (rem <= 0) { 
-            clearInterval(this.timerInterval); 
-            display.innerText = "Ready!"; 
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]); 
-            if (Notification.permission === "granted") new Notification("🔔 Rest Finished!"); // NOTIFICATION
-        } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
+    setRir(exIdx, setNum, val) { 
+        document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); 
+        document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); 
+        document.getElementById(`rir-${exIdx}-${setNum}`).value = val; 
+        if (this.editingHistoryIndex === null) { 
+            this.scrapeAndSaveDraft(); 
+            this.startTimer(Store.data.profile.timerDuration); // Use stored preference
+        } 
+    },
+    
+    startTimer(seconds) { 
+        const overlay = document.getElementById('timer-overlay'); 
+        const display = document.getElementById('timer-val'); 
+        overlay.classList.add('active');
+        if (this.timerInterval) clearInterval(this.timerInterval); 
+        let rem = seconds;
+        const tick = () => { 
+            const m = Math.floor(rem / 60).toString().padStart(2,'0'); 
+            const s = (rem % 60).toString().padStart(2,'0'); 
+            display.innerText = `${m}:${s}`; 
+            if (rem <= 0) { 
+                clearInterval(this.timerInterval); 
+                display.innerText = "Ready!"; 
+                if (navigator.vibrate) navigator.vibrate([200, 100, 200]); 
+                if (Notification.permission === "granted") new Notification("🔔 Rest Finished!"); 
+            } 
+            rem--; 
+        }; 
+        tick(); 
+        this.timerInterval = setInterval(tick, 1000);
     },
 
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
@@ -529,12 +550,23 @@ const UI = {
     renderLib() { this.pageTitle.innerText = 'Exercise Library'; const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'], 'Arms': ['biceps', 'triceps', 'arms'], 'Core': ['core'] }; let html = '<p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Tap an exercise to view progress.</p>'; for (const [category, muscles] of Object.entries(groups)) { const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle)); if (exercises.length > 0) { html += `<h3 class="lib-header">${category}</h3>` + exercises.map(e => `<div class="card clickable" onclick="UI.toggleChart(this, '${e.id}')"><div style="display:flex; justify-content:space-between;"><strong>${e.name}</strong><span style="font-size:0.7rem; background:#eee; padding:2px 6px; border-radius:4px;">${e.muscle}</span></div><div class="chart-container" id="chart-${e.id}"></div></div>`).join(''); } } this.container.innerHTML = html; },
     toggleChart(card, exId) { const container = card.querySelector('.chart-container'); if (card.classList.contains('expanded')) { card.classList.remove('expanded'); } else { document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded')); card.classList.add('expanded'); this.renderChart(exId, container); } },
     renderChart(exId, container) { const data = Coach.getChartData(exId); if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-top:40px; color:#888;">Not enough data yet.</p>'; return; } const h = 150, w = container.offsetWidth || 300; const vals = data.map(d => d.val); const min = Math.min(...vals) * 0.9; const max = Math.max(...vals) * 1.1; const range = max - min; const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${h - ((d.val - min) / range) * h}`).join(' '); container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${w} ${h}"><polyline class="chart-line" points="${points}" />${data.map((d, i) => `<circle cx="${(i / (data.length - 1)) * w}" cy="${h - ((d.val - min) / range) * h}" r="4" class="chart-dot" /><text x="${(i / (data.length - 1)) * w}" y="${h - ((d.val - min) / range) * h - 10}" text-anchor="middle" class="chart-label">${d.val}</text>`).join('')}</svg>`; },
-    renderSettings() { this.pageTitle.innerText = 'Settings'; const p = Store.data.profile; this.container.innerHTML = `<div class="card"><h2>Account</h2><button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button></div><div class="card"><label>Days Per Week</label><select id="s-freq"><option value="2" ${p.frequency==2?'selected':''}>2 Days</option><option value="3" ${p.frequency==3?'selected':''}>3 Days</option><option value="4" ${p.frequency==4?'selected':''}>4 Days</option></select><label>Emphasis</label><select id="s-emph"><option value="upper" ${p.emphasis=='upper'?'selected':''}>Upper Body</option><option value="lower" ${p.emphasis=='lower'?'selected':''}>Lower Body</option></select><button class="btn-primary" style="margin-top:15px" onclick="UI.saveSet()">Save Profile</button></div><div class="card"><button class="btn-secondary" onclick="UI.export()">Export Data</button></div>`; },
+    renderSettings() { 
+        this.pageTitle.innerText = 'Settings'; 
+        const p = Store.data.profile; 
+        const timerVal = p.timerDuration || 60;
+        this.container.innerHTML = `<div class="card"><h2>Account</h2><button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button></div><div class="card"><h2>Profile</h2><label>Frequency (Days/Week)</label><select id="s-freq"><option value="2" ${p.frequency==2?'selected':''}>2</option><option value="3" ${p.frequency==3?'selected':''}>3</option><option value="4" ${p.frequency==4?'selected':''}>4</option></select><label>Emphasis</label><select id="s-emph"><option value="upper" ${p.emphasis=='upper'?'selected':''}>Upper Body</option><option value="lower" ${p.emphasis=='lower'?'selected':''}>Lower Body</option></select><label>Rest Timer (Seconds)</label><input type="number" id="s-timer" value="${timerVal}" style="margin-bottom:15px;"><button class="btn-primary" style="margin-top:15px" onclick="UI.saveSet()">Save Profile</button></div><div class="card"><button class="btn-secondary" onclick="UI.export()">Export Data</button></div>`; 
+    },
     renderHistoryManager() { this.pageTitle.innerText = 'History Manager'; const recent = Store.data.history.map((h, i) => ({...h, origIndex: i})).reverse().slice(0, 3); if (recent.length === 0) { this.container.innerHTML = '<div class="card"><p>No history found.</p><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back</button></div>'; return; } const html = recent.map(item => `<div class="history-item"><div class="history-info"><strong>${new Date(item.date).toLocaleDateString()}</strong><span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span></div><div class="history-actions"><button class="btn-sm" onclick="UI.editWorkout(${item.origIndex})">Edit Workout</button><button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button></div></div>`).join(''); this.container.innerHTML = `<div style="margin-bottom:20px;">${html}</div><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back to Settings</button>`; },
     deleteHistory(index) { if(confirm("Are you sure?")) { Store.deleteSession(index); this.renderHistoryManager(); }},
     editWorkout(index) { const s = Store.data.history[index]; this.editingHistoryIndex = index; this.currentPlan = s.exercises; this.currentType = s.type; this.renderActiveSession(true); },
     saveEditedHistory() { const index = this.editingHistoryIndex; if (index === null) return; const newDate = document.getElementById('edit-date-input').value ? new Date(document.getElementById('edit-date-input').value).toISOString() : Store.data.history[index].date; const updatedSession = { date: newDate, type: this.currentType, exercises: this.currentPlan.map((ex, i) => ({ id: ex.id, type: ex.type, sets: ex.sets.map((_, sIdx) => ({ reps: Number(document.getElementById(`reps-${i}-${sIdx+1}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${sIdx+1}`).value), weight: Number(document.getElementById(`weight-${i}`).value) || 0 })) })) }; Store.updateHistorySession(index, updatedSession); alert("Updated!"); this.nav('settings'); },
-    saveSet() { Store.data.profile.frequency = Number(document.getElementById('s-freq').value); Store.data.profile.emphasis = document.getElementById('s-emph').value; Store.save(); alert("Saved!"); },
+    saveSet() { 
+        Store.data.profile.frequency = Number(document.getElementById('s-freq').value); 
+        Store.data.profile.emphasis = document.getElementById('s-emph').value; 
+        Store.data.profile.timerDuration = Number(document.getElementById('s-timer').value) || 60;
+        Store.save(); 
+        alert("Saved!"); 
+    },
     export() { const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(Store.data)); const a = document.createElement('a'); a.href = data; a.download = 'strengthos_backup.json'; document.body.appendChild(a); a.click(); a.remove(); },
     renderGuide() { this.pageTitle.innerText = 'Coach Logic'; this.container.innerHTML = `<div class="card"><div class="guide-block"><h3>🧠 Readiness Check</h3><p>Before every workout, tell the Coach how you feel. If you are tired (Score 1-3), the Coach drops volume to 2 sets to prevent burnout.</p></div><div class="guide-block"><h3>📉 Auto-Deload</h3><p>Every 6 weeks, the Coach triggers a "Light Week". Weights drop by 30% to allow your joints to recover.</p></div><div class="guide-block"><h3>📈 Progression</h3><p>Weights increase only if you hit 10+ reps AND rate the set as Easy (RIR 3).</p><p><strong>Small Muscles:</strong> +2.5 lbs.<br><strong>Large Muscles:</strong> +5 lbs.</p></div><div class="guide-block"><h3>🔄 Full Library Swap</h3><p>Don't like an exercise? Tap the 🔄 button to swap it with <strong>ANY</strong> exercise from the full library. The Coach will remember your choice for future workouts.</p></div></div>`; }
 };
