@@ -1,11 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v31
- * Updates: Visual Revert to Original Style (Blue/Inter/Emojis)
+ * StrengthOS - Complete Mobile PWA v32
+ * Updates: 1min Timer, System Notifications, 2-Session History
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v31.0';
+const APP_VERSION = 'v32.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -191,17 +191,21 @@ const Coach = {
         return stalled ? "Plateau Detected: 3 sessions without progress." : null;
     },
 
+    // UPDATED: Fetch last 2 sessions
     getHistoryString(exId) {
         const hist = Store.data.history;
+        let found = [];
         for (let i = hist.length - 1; i >= 0; i--) {
             const exData = hist[i].exercises.find(e => e.id === exId);
             if (exData && exData.sets && exData.sets.length > 0) {
+                const date = new Date(hist[i].date).toLocaleDateString(undefined, {month:'numeric', day:'numeric'});
                 const weight = exData.sets[0].weight;
                 const repsStr = exData.sets.map(s => s.reps).join(' x ');
-                return `Last: ${weight}lbs x ${repsStr}`;
+                found.push(`${date}: ${weight}lbs x ${repsStr}`);
             }
+            if (found.length >= 2) break;
         }
-        return "New Exercise";
+        return found.length > 0 ? found.join('<br>') : "New Exercise";
     },
 
     getChartData(exId) {
@@ -366,7 +370,7 @@ const UI = {
         const last7Days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d; });
         const bars = last7Days.map(date => { const dateString = date.toDateString(); const dayName = date.toLocaleDateString('en-US', { weekday: 'narrow' }); const trained = h.some(session => new Date(session.date).toDateString() === dateString); return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;"><div style="width:100%; background:${trained ? 'var(--primary)' : '#e2e8f0'}; height:${trained ? '100%' : '20%'}; border-radius:4px;"></div><span style="font-size:0.6rem; color:#888">${dayName}</span></div>`; }).join('');
 
-        this.container.innerHTML = `<div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus</div>${clipboardHtml}</div><div class="card"><h2>Activity Calendar</h2><div class="calendar-wrapper">${calHtml}</div></div><div class="card"><h2>History</h2><div class="summary-grid"><div class="summary-box"><div class="summary-label">Last Upper</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastUpIndex})">${formatDate(lastUp?.date)}</div></div><div class="summary-box"><div class="summary-label">Last Lower</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastLowIndex})">${formatDate(lastLow?.date)}</div></div></div><p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p></div><div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div>`;
+        this.container.innerHTML = `<div class="card clipboard-card"><div class="clipboard-header">📋 Coach's Focus</div>${clipboardHtml}</div><div class="card"><h2>Activity Calendar</h2><div class="calendar-wrapper">${calHtml}</div></div><div class="card"><h2>History</h2><div class="summary-grid"><div class="summary-box"><div class="summary-label">Last Upper</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastUpIndex})">${formatDate(lastUp?.date)}</div></div><div class="summary-box"><div class="summary-label">Last Lower</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastLowIndex})">${formatDate(lastLow?.date)}</div></div></div><p style="color:var(--text-muted)">Total Workouts: <strong>${count}</strong></p></div><div class="card"><h2>Last 7 Days</h2><div style="display:flex; align-items:flex-end; gap:5px; height:80px; padding-top:10px;">${bars}</div></div><div style="text-align:center; color:#9ca3af; font-size:0.75rem; margin: 20px 0;">StrengthOS ${APP_VERSION}</div>`;
     },
 
     showSessionSummary(index) {
@@ -407,7 +411,14 @@ const UI = {
 
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
-    triggerReadiness(type) { this.pendingWorkoutType = type; document.getElementById('readiness-modal').classList.add('active'); },
+    triggerReadiness(type) { 
+        this.pendingWorkoutType = type; 
+        document.getElementById('readiness-modal').classList.add('active'); 
+        // REQUEST PERMISSION HERE
+        if (Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+    },
     confirmReadiness(score) { document.getElementById('readiness-modal').classList.remove('active'); this.startNewSession(this.pendingWorkoutType, score); },
     
     startNewSession(type, readiness) { 
@@ -487,10 +498,16 @@ const UI = {
         }
     },
 
-    setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(120); } },
+    setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(60); } }, // Updated to 60
     startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active');
         if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds;
-        const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
+        const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; 
+        if (rem <= 0) { 
+            clearInterval(this.timerInterval); 
+            display.innerText = "Ready!"; 
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]); 
+            if (Notification.permission === "granted") new Notification("🔔 Rest Finished!"); // NOTIFICATION
+        } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000);
     },
 
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
