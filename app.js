@@ -1,11 +1,11 @@
 /**
- * StrengthOS - Complete Mobile PWA v33
- * Updates: Customizable Rest Timer
+ * StrengthOS - Complete Mobile PWA v34
+ * Updates: Fixed Cross-Muscle Swap Persistence (Slot Logic)
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v33.0';
+const APP_VERSION = 'v34.0';
 
 // --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
@@ -73,7 +73,7 @@ const Store = {
                 this.data.exercises = DEFAULT_EXERCISES; 
             }
             if (!this.data.activeExercises) this.data.activeExercises = {};
-            if (!this.data.profile.timerDuration) this.data.profile.timerDuration = 60; // Default to 60s if not set
+            if (!this.data.profile.timerDuration) this.data.profile.timerDuration = 60;
         } else {
             this.data = initialState;
             this.save();
@@ -93,35 +93,10 @@ const Coach = {
         const items = [];
         const last7 = h.filter(s => new Date(s.date) > new Date(Date.now() - 7*86400000));
         const freqTarget = Store.data.profile.frequency;
-        
         const liftingSessions = last7.filter(s => s.type !== 'cardio' && s.type !== 'core').length;
-        
-        if (liftingSessions < freqTarget) { items.push("📅 <strong>Consistency:</strong> You missed a target session recently. Goal: Just show up and punch the clock this week."); } 
-        else { items.push("🔥 <strong>Streak:</strong> You are consistent! Keep this momentum."); }
-
-        if (h.length > 0) {
-            const lastSession = h.find(s => s.type !== 'cardio' && s.type !== 'core'); 
-            if (lastSession) {
-                const closeCall = lastSession.exercises.find(e => {
-                    const best = e.sets.reduce((p,c) => c.reps > p.reps ? c : p, {reps:0});
-                    return best.reps >= 10 && best.reps < 12;
-                });
-                if (closeCall) {
-                    const exName = Store.data.exercises.find(e => e.id === closeCall.id)?.name || "Exercise";
-                    items.push(`💪 <strong>The Push:</strong> You hit high reps on ${exName}. Focus on breathing and get 12 clean reps.`);
-                }
-            }
-        }
-
-        const recent = h.filter(s => s.type !== 'cardio' && s.type !== 'core').slice(-3);
-        const upperCount = recent.filter(s => s.type === 'upper').length;
-        const lowerCount = recent.filter(s => s.type === 'lower').length;
-        if (upperCount > lowerCount + 1) items.push("⚖️ <strong>Balance:</strong> Lower body volume is lagging. Prioritize your next Leg Day.");
-        if (lowerCount > upperCount + 1) items.push("⚖️ <strong>Balance:</strong> Upper body volume is lagging. Prioritize Push/Pull next.");
-
-        if (h.length > 0 && h.length % 18 === 0) items.push("🛡️ <strong>Deload:</strong> Fatigue accumulation detected. We are lightening the load this week.");
-        if (items.length === 0) items.push("✨ <strong>Form Focus:</strong> Control the eccentric (lowering) phase for 3 seconds on every rep.");
-        return items.slice(0, 3);
+        if (liftingSessions < freqTarget) { items.push("📅 Consistency: You missed a target session recently."); } 
+        else { items.push("🔥 Streak: You are consistent! Keep this momentum."); }
+        return items.slice(0, 1);
     },
 
     generateCalendarData() {
@@ -129,34 +104,28 @@ const Coach = {
         const freq = Store.data.profile.frequency; 
         const patterns = { 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5] };
         const schedule = patterns[freq] || [1, 3, 5];
-
         const today = new Date();
         const dayOfWeek = today.getDay(); 
         const daysSinceLastMonday = dayOfWeek + 6; 
         const startDate = new Date(today);
         startDate.setDate(today.getDate() - daysSinceLastMonday);
         startDate.setHours(0,0,0,0);
-
         const calendarWeeks = [];
         
         for (let w = 0; w < 3; w++) {
             const weekDays = [];
             let weekLabel = w === 0 ? "Past Week" : (w === 1 ? "Current Week" : "Future Week");
-            
             for (let d = 0; d < 7; d++) {
                 const currentDate = new Date(startDate);
                 currentDate.setDate(startDate.getDate() + (w * 7) + d);
                 const dateStr = currentDate.toDateString();
                 const isToday = dateStr === today.toDateString();
                 const isPast = currentDate < today;
-                
                 const actual = h.find(s => new Date(s.date).toDateString() === dateStr);
                 const dayNum = currentDate.getDay(); 
                 const isScheduledDay = schedule.includes(dayNum);
-
                 let status = 'rest';
                 let label = ''; 
-
                 if (actual) {
                     if (actual.type === 'cardio') { status = 'cardio'; label = 'C'; }
                     else if (actual.type === 'core') { status = 'core'; label = 'F'; }
@@ -167,7 +136,6 @@ const Coach = {
                     if (isPast && !isToday) status = 'missed';
                     else status = 'sched';
                 }
-
                 weekDays.push({ day: ['S','M','T','W','T','F','S'][dayNum], status: status, label: label, isToday: isToday });
             }
             calendarWeeks.push({ label: weekLabel, days: weekDays });
@@ -175,24 +143,9 @@ const Coach = {
         return calendarWeeks;
     },
 
-    getExerciseName(id) {
-        const ex = Store.data.exercises.find(e => e.id === id);
-        return ex ? ex.name : 'Unknown Exercise';
-    },
-
-    detectPlateau(exId) {
-        const hist = Store.data.history.filter(h => h.exercises.some(e => e.id === exId)).slice(-3);
-        if (hist.length < 3) return null;
-        const efforts = hist.map(session => {
-            const ex = session.exercises.find(e => e.id === exId);
-            const bestSet = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0});
-            return { weight: bestSet.weight, reps: bestSet.reps };
-        });
-        const stalled = (efforts[2].weight <= efforts[1].weight && efforts[1].weight <= efforts[0].weight) && (efforts[2].reps <= efforts[1].reps && efforts[1].reps <= efforts[0].reps);
-        return stalled ? "Plateau Detected: 3 sessions without progress." : null;
-    },
-
-    // UPDATED: Fetch last 2 sessions
+    getExerciseName(id) { const ex = Store.data.exercises.find(e => e.id === id); return ex ? ex.name : 'Unknown Exercise'; },
+    detectPlateau(exId) { const hist = Store.data.history.filter(h => h.exercises.some(e => e.id === exId)).slice(-3); if (hist.length < 3) return null; const efforts = hist.map(session => { const ex = session.exercises.find(e => e.id === exId); const bestSet = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0}); return { weight: bestSet.weight, reps: bestSet.reps }; }); const stalled = (efforts[2].weight <= efforts[1].weight && efforts[1].weight <= efforts[0].weight) && (efforts[2].reps <= efforts[1].reps && efforts[1].reps <= efforts[0].reps); return stalled ? "Plateau Detected" : null; },
+    
     getHistoryString(exId) {
         const hist = Store.data.history;
         let found = [];
@@ -209,50 +162,15 @@ const Coach = {
         return found.length > 0 ? found.join('<br>') : "New Exercise";
     },
 
-    getChartData(exId) {
-        return Store.data.history.map(s => {
-            const ex = s.exercises.find(e => e.id === exId);
-            if (!ex) return null;
-            const best = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0});
-            const e1rm = best.weight * (1 + (best.reps / 30));
-            return { date: s.date, val: Math.round(e1rm) };
-        }).filter(x => x !== null).slice(-10);
-    },
-
-    getAllExercisesGrouped() {
-        const groups = { 'Chest': [], 'Back': [], 'Shoulders': [], 'Legs': [], 'Arms': [], 'Core': [] };
-        const getGroup = (m) => {
-            if (['chest'].includes(m)) return 'Chest';
-            if (['back'].includes(m)) return 'Back';
-            if (['shoulders'].includes(m)) return 'Shoulders';
-            if (['quads','hamstrings','glutes','calves'].includes(m)) return 'Legs';
-            if (['biceps','triceps'].includes(m)) return 'Arms';
-            return 'Core';
-        };
-        Store.data.exercises.forEach(ex => {
-            if (!Store.data.profile.wristPain || ex.joint !== 'wrist') {
-                const g = getGroup(ex.muscle);
-                groups[g].push(ex);
-            }
-        });
-        return groups;
-    },
-
-    getAlternatives(exId) {
-        const current = Store.data.exercises.find(e => e.id === exId);
-        if(!current) return [];
-        return Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist'));
-    },
+    getChartData(exId) { return Store.data.history.map(s => { const ex = s.exercises.find(e => e.id === exId); if (!ex) return null; const best = ex.sets.reduce((p, c) => (c.weight * c.reps > p.weight * p.reps) ? c : p, {weight:0, reps:0}); const e1rm = best.weight * (1 + (best.reps / 30)); return { date: s.date, val: Math.round(e1rm) }; }).filter(x => x !== null).slice(-10); },
+    getAllExercisesGrouped() { const groups = { 'Chest': [], 'Back': [], 'Shoulders': [], 'Legs': [], 'Arms': [], 'Core': [] }; const getGroup = (m) => { if (['chest'].includes(m)) return 'Chest'; if (['back'].includes(m)) return 'Back'; if (['shoulders'].includes(m)) return 'Shoulders'; if (['quads','hamstrings','glutes','calves'].includes(m)) return 'Legs'; if (['biceps','triceps'].includes(m)) return 'Arms'; return 'Core'; }; Store.data.exercises.forEach(ex => { if (!Store.data.profile.wristPain || ex.joint !== 'wrist') { const g = getGroup(ex.muscle); groups[g].push(ex); } }); return groups; },
+    getAlternatives(exId) { const current = Store.data.exercises.find(e => e.id === exId); if(!current) return []; return Store.data.exercises.filter(e => e.muscle === current.muscle && e.id !== exId && (!Store.data.profile.wristPain || e.joint !== 'wrist')); },
 
     generateWorkout(forcedType = null, readinessScore = 5) {
-        // Simple generation based on forcedType (Upper/Lower)
-        // No more rotation logic here since buttons are static
         const { wristPain } = Store.data.profile;
         let type = forcedType || 'full';
-        
         const sessionCount = Store.data.history.length;
         const isDeload = (sessionCount > 0 && sessionCount % 18 === 0);
-
         let muscles = [];
         if (type === 'upper') muscles = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'core'];
         if (type === 'lower') muscles = ['quads', 'hamstrings', 'glutes', 'calves', 'core'];
@@ -269,19 +187,15 @@ const Coach = {
             if (ex) selected.push(ex);
         });
         Store.save();
-
-        let setVolume = 3;
-        if (readinessScore <= 3) setVolume = 2;
-        if (isDeload) setVolume = 2;
-
-        return {
-            type: type, isDeload: isDeload,
-            exercises: selected.map(ex => {
-                const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' };
-                const workingWeight = isDeload ? Math.round(prog.weight * 0.7) : prog.weight;
-                const plateauMsg = this.detectPlateau(ex.id);
-                return { ...ex, targetWeight: workingWeight, targetReps: prog.nextReps, sets: setVolume, note: plateauMsg };
-            })
+        let setVolume = 3; if (readinessScore <= 3) setVolume = 2; if (isDeload) setVolume = 2;
+        
+        return { type: type, isDeload: isDeload, exercises: selected.map(ex => { 
+                const prog = Store.data.progression[ex.id] || { weight: 10, nextReps: '8-12' }; 
+                const workingWeight = isDeload ? Math.round(prog.weight * 0.7) : prog.weight; 
+                const plateauMsg = this.detectPlateau(ex.id); 
+                // NEW: Attach 'slot' (muscle group) to exercise object for swap logic
+                return { ...ex, slot: ex.muscle, targetWeight: workingWeight, targetReps: prog.nextReps, sets: setVolume, note: plateauMsg }; 
+            }) 
         };
     },
 
@@ -289,18 +203,11 @@ const Coach = {
         const coreEx = Store.data.exercises.filter(e => e.muscle === 'core');
         const shuffled = coreEx.sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 5);
-        return selected.map(ex => ({
-            ...ex,
-            targetWeight: 0,
-            targetReps: '45 sec',
-            sets: 2,
-            note: 'Circuit Mode'
-        }));
+        return selected.map(ex => ({ ...ex, slot: 'core', targetWeight: 0, targetReps: '45 sec', sets: 2, note: 'Circuit Mode' }));
     },
 
     updateProgression(session) {
         if (session.type === 'cardio' || session.type === 'core') return;
-        
         session.exercises.forEach(res => {
             const lastSet = res.sets[res.sets.length - 1];
             const actualWeight = lastSet.weight || 0;
@@ -329,7 +236,7 @@ const UI = {
         if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove(); if(oldSwap) oldSwap.remove(); if(oldSummary) oldSummary.remove();
 
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
-        const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel today?</h3><p style="color:#666; margin-bottom:20px;">Be honest. The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
+        const modalHtml = `<div id="readiness-modal" class="modal-overlay"><div class="modal-content"><h3>How do you feel?</h3><p style="color:#666; margin-bottom:20px;">The Coach will adjust volume.</p><div class="readiness-options"><button class="readiness-btn" onclick="UI.confirmReadiness(2)">😫<br><small>Tired</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(3)">😐<br><small>Okay</small></button><button class="readiness-btn" onclick="UI.confirmReadiness(5)">💪<br><small>Great</small></button></div></div></div>`;
         const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
         const swapHtml = `<div id="swap-modal" class="modal-overlay"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap Exercise</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').classList.remove('active')">X</div></div><div id="swap-list-container" class="swap-list" style="overflow-y:auto;"></div></div></div>`;
         const footerHtml = `<div class="version-footer">StrengthOS ${APP_VERSION}</div>`;
@@ -365,7 +272,6 @@ const UI = {
         const goals = Coach.generateWeeklyFocus();
         const clipboardHtml = goals.map(text => `<div class="clipboard-item"><div class="clipboard-check" onclick="this.classList.toggle('checked')"></div><div>${text}</div></div>`).join('');
         
-        // Calendar Logic with Letters
         const calData = Coach.generateCalendarData();
         const calHtml = calData.map(week => `
             <div class="cal-week"><div class="cal-title">${week.label}</div><div class="cal-days">${week.days.map(d => `<div class="cal-day ${d.isToday ? 'today' : ''}"><span>${d.day}</span><div class="cal-dot ${d.status}">${d.label || ''}</div></div>`).join('')}</div></div>`).join('');
@@ -391,8 +297,7 @@ const UI = {
 
     renderWorkoutIntro() {
         this.pageTitle.innerText = 'Workout';
-        const draft = Store.getDraft(); const last = Store.data.history[Store.data.history.length - 1];
-        let primaryType = (last && last.type === 'upper') ? 'lower' : 'upper'; let altType = (primaryType === 'upper') ? 'lower' : 'upper';
+        const draft = Store.getDraft();
         if (draft) { this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="border: 2px solid var(--warning);"><h3>Paused Session Found</h3><p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p><button class="btn-primary" style="background:var(--warning)" onclick="UI.resumeSession()">Resume Workout</button><button class="btn-secondary" onclick="UI.clearDraft()">Discard</button></div></div>`; } 
         else { this.container.innerHTML = `
             <div style="padding:20px 0;">
@@ -406,35 +311,19 @@ const UI = {
             </div>`; }
     },
 
-    finishCardioSession() {
-        if(!confirm("Log today as Cardio Day?")) return;
-        const results = { date: new Date().toISOString(), type: 'cardio', exercises: [] };
-        Store.logSession(results); alert("Cardio Session Logged!"); this.nav('dashboard');
-    },
-
+    finishCardioSession() { if(!confirm("Log today as Cardio Day?")) return; const results = { date: new Date().toISOString(), type: 'cardio', exercises: [] }; Store.logSession(results); alert("Cardio Session Logged!"); this.nav('dashboard'); },
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
     resumeSession() { const d = Store.getDraft(); this.currentPlan = d.plan; this.currentStartTime = d.startTime; this.currentType = d.type; this.renderActiveSession(true); },
     triggerReadiness(type) { 
         this.pendingWorkoutType = type; 
         document.getElementById('readiness-modal').classList.add('active'); 
-        if (Notification.permission === "default") {
-            Notification.requestPermission();
-        }
+        if (Notification.permission === "default") Notification.requestPermission();
     },
     confirmReadiness(score) { document.getElementById('readiness-modal').classList.remove('active'); this.startNewSession(this.pendingWorkoutType, score); },
     
     startNewSession(type, readiness) { 
-        let g;
-        if (type === 'core') {
-            g = { exercises: Coach.generateCoreWorkout(), type: 'core', isDeload: false };
-        } else {
-            g = Coach.generateWorkout(type, readiness);
-        }
-        this.currentPlan = g.exercises;
-        this.currentType = g.type;
-        this.isDeload = g.isDeload;
-        this.currentStartTime = new Date().toISOString();
-        this.renderActiveSession(false);
+        let g; if (type === 'core') { g = { exercises: Coach.generateCoreWorkout(), type: 'core', isDeload: false }; } else { g = Coach.generateWorkout(type, readiness); }
+        this.currentPlan = g.exercises; this.currentType = g.type; this.isDeload = g.isDeload; this.currentStartTime = new Date().toISOString(); this.renderActiveSession(false);
     },
 
     renderActiveSession(isResumeOrEdit) {
@@ -463,24 +352,41 @@ const UI = {
         window.scrollTo(0,0);
     },
 
+    // NEW: Pass the Role (slot) instead of just the muscle
     swapExercise(index) {
-        this.scrapeAndSaveDraft(); const oldEx = this.currentPlan[index]; const allGrouped = Coach.getAllExercisesGrouped();
-        let listHtml = ''; for (const [group, exercises] of Object.entries(allGrouped)) { if (exercises.length > 0) { listHtml += `<div class="swap-header">${group}</div>` + exercises.map(ex => `<div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${oldEx.muscle}')"><div><strong>${ex.name}</strong><small>${ex.pattern}</small></div><span class="swap-select-btn">Select</span></div>`).join(''); } }
+        this.scrapeAndSaveDraft(); 
+        const oldEx = this.currentPlan[index];
+        // Use the slot if available (v34+), otherwise fallback to muscle (legacy)
+        const role = oldEx.slot || oldEx.muscle; 
+        const allGrouped = Coach.getAllExercisesGrouped();
+        
+        let listHtml = ''; 
+        for (const [group, exercises] of Object.entries(allGrouped)) { 
+            if (exercises.length > 0) { 
+                listHtml += `<div class="swap-header">${group}</div>` + exercises.map(ex => `
+                    <div class="swap-item" onclick="UI.selectSwap(${index}, '${ex.id}', '${role}')">
+                        <div><strong>${ex.name}</strong><small>${ex.pattern}</small></div>
+                        <span class="swap-select-btn">Select</span>
+                    </div>`).join(''); 
+            } 
+        }
         const modal = document.getElementById('swap-modal');
         document.getElementById('swap-list-container').innerHTML = listHtml;
         modal.classList.add('active');
     },
 
-    selectSwap(index, newId, oldMuscle) {
+    // NEW: Update activeExercises using the ROLE (slot) key
+    selectSwap(index, newId, role) {
         document.getElementById('swap-modal').classList.remove('active');
         const newEx = Store.data.exercises.find(e => e.id === newId);
-        if (newEx.muscle === oldMuscle) {
-            Store.data.activeExercises[oldMuscle] = newId; 
-            Store.save();
-        }
+        
+        // This is the fix: We overwrite the preference for the SLOT (role), not the anatomy.
+        Store.data.activeExercises[role] = newId; 
+        Store.save();
         
         const prog = Store.data.progression[newId] || { weight: 10, nextReps: '8-12' };
-        this.currentPlan[index] = { ...newEx, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped' };
+        // Ensure the new exercise keeps the 'slot' tag so it can be swapped again later
+        this.currentPlan[index] = { ...newEx, slot: role, targetWeight: prog.weight, targetReps: prog.nextReps, sets: 3, note: 'Swapped' };
         this.renderActiveSession(true);
     },
 
@@ -505,7 +411,7 @@ const UI = {
         document.getElementById(`rir-${exIdx}-${setNum}`).value = val; 
         if (this.editingHistoryIndex === null) { 
             this.scrapeAndSaveDraft(); 
-            this.startTimer(Store.data.profile.timerDuration); // Use stored preference
+            this.startTimer(Store.data.profile.timerDuration); 
         } 
     },
     
