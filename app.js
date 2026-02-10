@@ -1,13 +1,13 @@
 /**
- * StrengthOS - Complete Mobile PWA v36
- * Updates: Rest-Pause 20 Rep Logic, 6 Sets, Normal Mode Layout Fix
+ * StrengthOS - Complete Mobile PWA v37
+ * Updates: Intensity Mode Grid Layout & Total Counter Position
  */
 
 const STORAGE_KEY = 'strengthOS_data_v2';
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v36.0';
+const APP_VERSION = 'v37.0';
 
-// --- 1. EXERCISE LIBRARY (Same as v35) ---
+// --- 1. EXERCISE LIBRARY ---
 const DEFAULT_EXERCISES = [
     { id: 'db_bench', name: 'DB Chest Press', muscle: 'chest', pattern: 'push_horiz', type: 'dumbbell', joint: 'shoulder', allowRestPause: true },
     { id: 'db_incline', name: 'Incline DB Press', muscle: 'chest', pattern: 'push_horiz', type: 'dumbbell', joint: 'shoulder', allowRestPause: true },
@@ -84,8 +84,8 @@ const Store = {
 };
 
 const Coach = {
-    // ... (Keep existing generateWeeklyFocus, generateCalendarData, getExerciseName, detectPlateau, getChartData, getAllExercisesGrouped, getAlternatives, generateCoreWorkout) ...
-    // These functions are unmodified from v35
+    // ... (Keep existing generateWeeklyFocus, generateCalendarData, getExerciseName, detectPlateau, getHistoryString, getChartData, getAllExercisesGrouped, getAlternatives, generateCoreWorkout) ...
+    // These functions are unmodified from v36
     generateWeeklyFocus() { return ["🔥 Streak: Keep building momentum!"]; },
     generateCalendarData() {
         const h = Store.data.history;
@@ -305,7 +305,16 @@ const UI = {
         this.pageTitle.innerText = 'Workout';
         const draft = Store.getDraft();
         if (draft) { this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="border: 2px solid var(--warning);"><h3>Paused Session Found</h3><p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p><button class="btn-primary" style="background:var(--warning)" onclick="UI.resumeSession()">Resume Workout</button><button class="btn-secondary" onclick="UI.clearDraft()">Discard</button></div></div>`; } 
-        else { this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="text-align:center; padding: 30px 20px;"><div style="font-size:3rem; margin-bottom:10px;">💪</div><button class="btn-primary" onclick="UI.triggerReadiness('upper')">Upper Workout</button><button class="btn-primary" onclick="UI.triggerReadiness('lower')">Lower Workout</button><button class="btn-core" onclick="UI.triggerReadiness('core')">🔥 Core Workout</button><button class="btn-cardio" onclick="UI.finishCardioSession()">🏃 Cardio Day</button></div></div>`; }
+        else { this.container.innerHTML = `
+            <div style="padding:20px 0;">
+                <div class="card" style="text-align:center; padding: 30px 20px;">
+                    <div style="font-size:3rem; margin-bottom:10px;">💪</div>
+                    <button class="btn-primary" onclick="UI.triggerReadiness('upper')">Upper Workout</button>
+                    <button class="btn-primary" onclick="UI.triggerReadiness('lower')">Lower Workout</button>
+                    <button class="btn-core" onclick="UI.triggerReadiness('core')">🔥 Core Workout</button>
+                    <button class="btn-cardio" onclick="UI.finishCardioSession()">🏃 Cardio Day</button>
+                </div>
+            </div>`; }
     },
     finishCardioSession() { if(!confirm("Log today as Cardio Day?")) return; const results = { date: new Date().toISOString(), type: 'cardio', exercises: [] }; Store.logSession(results); alert("Cardio Session Logged!"); this.nav('dashboard'); },
     clearDraft() { localStorage.removeItem(DRAFT_KEY); this.renderWorkoutIntro(); },
@@ -346,7 +355,6 @@ const UI = {
         const isHistoryEdit = this.editingHistoryIndex !== null;
         let dataMap = {}; if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
         let topHtml = this.isDeload ? `<div class="deload-banner">⚠️ Deload Week: Weights -30%</div>` : '';
-        const legend = `<div class="rir-legend-box"><span class="rir-legend-title">RIR Scale</span>0 = Failure | 1 = Hard | 2 = Sweet Spot | 3+ = Easy</div>`;
         let dateHeader = isHistoryEdit ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><label style="font-size:0.8rem; font-weight:bold;">Editing Date:</label><input type="date" id="edit-date-input" value="${new Date(Store.data.history[this.editingHistoryIndex].date).toISOString().split('T')[0]}" style="margin-bottom:0;"></div>` : '';
 
         const exercisesHtml = this.currentPlan.map((ex, i) => {
@@ -373,31 +381,56 @@ const UI = {
             if (ex.allowRestPause && !isIntensity) badges += `<span class="rp-badge" style="background:#eee; color:#666; border:none;">Rest-Pause Available</span>`;
             if (isIntensity) badges += `<span class="rp-badge">⚡ Intensity Mode</span>`;
 
-            const setRows = Array.from({length: ex.sets}, (_, k) => k + 1).map(s => {
-                let repVal = '', rirVal = 2;
-                if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else { repVal = dataMap[`reps-${i}-${s}`] || ''; rirVal = dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2; }
-                
-                let setLabel = `Set ${s}`;
-                if (isIntensity) {
-                    if (s === 1) setLabel = "Activation";
-                    else setLabel = `RP Set ${s-1}`;
+            let setRows = '';
+            if (isIntensity) {
+                // Row 1: Sets 1, 2, 3
+                let row1 = '<div class="intensity-grid">';
+                for (let s=1; s<=3; s++) {
+                    let label = s===1 ? 'Activation' : `RP Set ${s-1}`;
+                    let val = dataMap[`reps-${i}-${s}`] || '';
+                    row1 += `
+                    <div class="intensity-set">
+                        <label>${label}</label>
+                        <input type="number" placeholder="0" id="reps-${i}-${s}" value="${val}" ${!isHistoryEdit ? `onchange="UI.scrapeAndSaveDraft(); UI.calculateTotalReps(${i})"` : ''} class="mono">
+                        <input type="hidden" id="rir-${i}-${s}" value="0">
+                    </div>`;
                 }
-
-                return `<div class="set-row">
-                    <span style="font-size:0.8rem; color:#888">${setLabel}</span>
-                    <input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${repVal}" ${!isHistoryEdit ? `onchange="UI.scrapeAndSaveDraft(); ${isIntensity ? `UI.calculateTotalReps(${i})` : ''}"` : ''} class="mono">
-                    ${!isIntensity ? `
-                    <div class="rir-container">
-                        <div class="rir-header-row"><span class="rir-label">F</span><span class="rir-label">H</span><span class="rir-label">SP</span><span class="rir-label">E</span></div>
-                        <div class="rir-selector" id="rir-box-${i}-${s}">${[0,1,2,3].map(r => `<div class="rir-btn ${rirVal == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}</div>
-                    </div>
-                    <input type="hidden" id="rir-${i}-${s}" value="${rirVal}">` 
-                    : `<input type="hidden" id="rir-${i}-${s}" value="0">`} 
-                </div>`;
-            }).join('');
+                row1 += '</div>';
+                
+                // Row 2: Sets 4, 5, 6
+                let row2 = '<div class="intensity-grid">';
+                for (let s=4; s<=6; s++) {
+                    let label = `RP Set ${s-1}`;
+                    let val = dataMap[`reps-${i}-${s}`] || '';
+                    row2 += `
+                    <div class="intensity-set">
+                        <label>${label}</label>
+                        <input type="number" placeholder="0" id="reps-${i}-${s}" value="${val}" ${!isHistoryEdit ? `onchange="UI.scrapeAndSaveDraft(); UI.calculateTotalReps(${i})"` : ''} class="mono">
+                        <input type="hidden" id="rir-${i}-${s}" value="0">
+                    </div>`;
+                }
+                row2 += '</div>';
+                setRows = row1 + row2;
+            } else {
+                // STANDARD MODE
+                setRows = Array.from({length: ex.sets}, (_, k) => k + 1).map(s => {
+                    let repVal = '', rirVal = 2;
+                    if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else { repVal = dataMap[`reps-${i}-${s}`] || ''; rirVal = dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2; }
+                    
+                    return `<div class="set-row">
+                        <span style="font-size:0.8rem; color:#888">Set ${s}</span>
+                        <input type="number" placeholder="Reps" id="reps-${i}-${s}" value="${repVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''} class="mono">
+                        <div class="rir-container">
+                            <div class="rir-header-row"><span class="rir-label">F</span><span class="rir-label">H</span><span class="rir-label">SP</span><span class="rir-label">E</span></div>
+                            <div class="rir-selector" id="rir-box-${i}-${s}">${[0,1,2,3].map(r => `<div class="rir-btn ${rirVal == r ? 'selected' : ''}" onclick="UI.setRir(${i},${s},${r})">${r}${r==3?'+':''}</div>`).join('')}</div>
+                        </div>
+                        <input type="hidden" id="rir-${i}-${s}" value="${rirVal}">
+                    </div>`;
+                }).join('');
+            }
 
             const goalText = isIntensity ? "Goal: 20+ Reps (Sets 2-6)" : `Target: ${ex.targetReps} reps`;
-            const totalCounter = isIntensity ? `<div id="total-reps-${i}" class="total-reps">Total: 0</div>` : '';
+            const totalCounter = isIntensity ? `<div id="total-reps-${i}" class="total-reps-footer">Total: 0</div>` : '';
 
             return `<div class="card" id="card-${i}">
                 ${!isHistoryEdit && !ex.isBonus ? `<div class="swap-btn" onclick="UI.swapExercise(${i})">🔄</div>` : ''}
@@ -408,15 +441,15 @@ const UI = {
                 <div class="weight-input-group"><label>Working Weight</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''} class="mono"></div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <p style="color:#8E8E93; font-size:0.8rem; margin:0;">${goalText}</p>
-                    ${totalCounter}
                 </div>
                 ${setRows}
+                ${totalCounter}
             </div>`;
         }).join('');
         
         let actionBtn = `<button class="btn-bonus" onclick="UI.addBonusExercise()">+ Bonus Exercise</button><br><button class="btn-primary" onclick="UI.finishSession()">Finish Workout</button>`;
         if (isHistoryEdit) actionBtn = `<button class="btn-primary" onclick="UI.saveEditedHistory()">Save Changes</button><button class="btn-secondary" onclick="UI.renderHistoryManager()">Cancel</button>`;
-        this.container.innerHTML = `${topHtml}${dateHeader}${legend}${exercisesHtml}${actionBtn}`;
+        this.container.innerHTML = `${topHtml}${dateHeader}${exercisesHtml}${actionBtn}`;
         
         this.currentPlan.forEach((ex, i) => { if(ex.mode === 'intensity') this.calculateTotalReps(i); });
         
@@ -431,7 +464,7 @@ const UI = {
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
     scrapeAndSaveDraft() { const inputs = {}; document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; }); Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs }); },
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
-    finishSession() { if(!confirm("Finish and save?")) return; const sessionExercises = this.currentPlan.filter(e => !e.isBonus).map((ex, i) => { const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight; const setsData = []; for(let s=1; s<=ex.sets; s++) { setsData.push({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value) || 0, weight: w }); } return { id: ex.id, type: ex.type, sets: setsData, mode: ex.mode || 'normal' }; }); const results = { date: new Date().toISOString(), type: this.currentType, exercises: sessionExercises }; Store.logSession(results); this.stopTimer(); alert("Saved!"); this.nav('dashboard'); },
+    finishSession() { if(!confirm("Finish and save workout?")) return; const sessionExercises = this.currentPlan.filter(e => !e.isBonus).map((ex, i) => { const w = Number(document.getElementById(`weight-${i}`).value) || ex.targetWeight; const setsData = []; for(let s=1; s<=ex.sets; s++) { setsData.push({ reps: Number(document.getElementById(`reps-${i}-${s}`).value) || 0, rir: Number(document.getElementById(`rir-${i}-${s}`).value) || 0, weight: w }); } return { id: ex.id, type: ex.type, sets: setsData, mode: ex.mode || 'normal' }; }); const results = { date: new Date().toISOString(), type: this.currentType, exercises: sessionExercises }; Store.logSession(results); this.stopTimer(); alert("Great job!"); this.nav('dashboard'); },
     renderLib() { this.pageTitle.innerText = 'Library'; const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['quads', 'hamstrings', 'glutes', 'calves', 'legs'], 'Arms': ['biceps', 'triceps', 'arms'], 'Core': ['core'] }; let html = '<p style="color:#666; font-size:0.9rem; margin-bottom:15px;">Tap an exercise to view progress.</p>'; for (const [category, muscles] of Object.entries(groups)) { const exercises = Store.data.exercises.filter(e => muscles.includes(e.muscle)); if (exercises.length > 0) { html += `<h3 class="lib-header">${category}</h3>` + exercises.map(e => `<div class="card clickable" onclick="UI.toggleChart(this, '${e.id}')"><div><strong>${e.name}</strong></div><div class="chart-container" id="chart-${e.id}"></div></div>`).join(''); } } this.container.innerHTML = html; },
     toggleChart(card, exId) { const container = card.querySelector('.chart-container'); if (card.classList.contains('expanded')) { card.classList.remove('expanded'); } else { document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded')); card.classList.add('expanded'); this.renderChart(exId, container); } },
     renderChart(exId, container) { const data = Coach.getChartData(exId); if (data.length < 2) { container.innerHTML = '<p style="text-align:center; padding-40px; color:#8E8E93;">Keep training to see data.</p>'; return; } const h = 150, w = container.offsetWidth || 300; const vals = data.map(d => d.val); const min = Math.min(...vals) * 0.9; const max = Math.max(...vals) * 1.1; const range = max - min; const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${h - ((d.val - min) / range) * h}`).join(' '); container.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${w} ${h}"><polyline class="chart-line" points="${points}" />${data.map((d, i) => `<circle cx="${(i / (data.length - 1)) * w}" cy="${h - ((d.val - min) / range) * h}" r="4" class="chart-dot" /><text x="${(i / (data.length - 1)) * w}" y="${h - ((d.val - min) / range) * h - 10}" text-anchor="middle" class="chart-label">${d.val}</text>`).join('')}</svg>`; },
