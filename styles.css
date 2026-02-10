@@ -6,6 +6,7 @@
     --bonus: #8b5cf6;
     --cardio: #0ea5e9; 
     --core: #eab308;
+    --intensity: #dc2626; /* Red for Intensity Mode */
     --bg: #f4f6f8;
     --card-bg: #ffffff;
     --text-main: #1f2937;
@@ -16,7 +17,7 @@
     --footer-height: 25px;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
 body { background-color: var(--bg); color: var(--text-main); padding-bottom: calc(var(--nav-height) + var(--footer-height) + 20px); margin: 0; }
 
 /* Header */
@@ -137,7 +138,7 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
     margin-bottom: 10px; 
     font-weight: 500; 
     background: rgba(37, 99, 235, 0.05); 
-    display: block; /* Changed to block for multi-line */
+    display: block;
     padding: 6px 10px; 
     border-radius: 6px;
     line-height: 1.4;
@@ -150,6 +151,23 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 .rir-selector { display: flex; gap: 4px; width: 100%; }
 .rir-btn { flex: 1; padding: 12px 0; font-size: 0.9rem; background: #f3f4f6; border-radius: 6px; text-align: center; cursor: pointer; border: 1px solid transparent; font-weight: 600; }
 .rir-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); }
+
+/* Intensity Mode Styles */
+.rp-badge { 
+    font-size: 0.7rem; font-weight: 700; color: var(--intensity); 
+    background: #fef2f2; padding: 2px 6px; border-radius: 4px; border: 1px solid #fecaca;
+    margin-left: 5px; display: inline-block; vertical-align: middle;
+}
+.mode-toggle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+.mode-label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.toggle-switch { position: relative; width: 44px; height: 24px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--intensity); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+.total-reps { font-size: 0.9rem; font-weight: bold; color: var(--intensity); text-align: right; margin-top: 5px; }
 
 /* Library & Guide */
 .lib-header { font-size: 1.1rem; color: var(--text-muted); margin: 25px 0 10px 5px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; position: sticky; top: 75px; z-index: 40; background: var(--bg); padding: 5px 0; }
