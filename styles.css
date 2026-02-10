@@ -6,7 +6,7 @@
     --bonus: #8b5cf6;
     --cardio: #0ea5e9; 
     --core: #eab308;
-    --intensity: #dc2626;
+    --intensity: #dc2626; /* Red for Intensity Mode */
     --bg: #f4f6f8;
     --card-bg: #ffffff;
     --text-main: #1f2937;
@@ -144,7 +144,7 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
     line-height: 1.4;
 }
 
-/* SET ROW & RIR STYLING (RESTORED) */
+/* SET ROW & RIR STYLING */
 .set-row { display: grid; grid-template-columns: 0.5fr 0.8fr 2fr; gap: 10px; margin-bottom: 12px; align-items: flex-end; }
 .rir-legend-box { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 0.8rem; text-align: center; }
 .rir-legend-title { font-weight: bold; display: block; margin-bottom: 4px; text-transform: uppercase; }
@@ -173,7 +173,47 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 input:checked + .slider { background-color: var(--intensity); }
 input:checked + .slider:before { transform: translateX(20px); }
 
-.total-reps { font-size: 0.9rem; font-weight: bold; color: var(--intensity); text-align: right; margin-top: 5px; }
+/* Intensity Grid Layout */
+.intensity-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.intensity-set {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.intensity-set label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    white-space: nowrap;
+}
+.intensity-set input {
+    text-align: center;
+    padding: 10px;
+    font-size: 1.1rem;
+    font-family: monospace;
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+}
+.intensity-set input:focus {
+    border-color: var(--intensity);
+    outline: none;
+}
+.total-reps-footer {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+    margin-top: 5px;
+    text-align: right;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: var(--intensity);
+}
 
 /* Library & Guide */
 .lib-header { font-size: 1.1rem; color: var(--text-muted); margin: 25px 0 10px 5px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; position: sticky; top: 75px; z-index: 40; background: var(--bg); padding: 5px 0; }
