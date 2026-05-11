@@ -258,9 +258,9 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
 .swap-select-btn { color: var(--primary); font-weight: 600; font-size: 0.9rem; }
 
 /* Session Summary List */
-.session-summary-list { text-align: left; margin-top: 15px; max-height: 300px; overflow-y: auto; border-top: 1px solid #eee; }
-.session-summary-item { padding: 10px 0; border-bottom: 1px solid #f9f9f9; font-size: 0.9rem; }
-.session-summary-item strong { color: var(--text-main); display:block; margin-bottom: 2px; }
-.session-summary-item span { color: var(--text-muted); font-size: 0.85rem; font-family: monospace; }
+.session-summary-list { text-align: left; margin-top: 15px; max-height: 65vh; overflow-y: auto; border-top: 1px solid #eee; }
+.session-summary-item { padding: 6px 0; border-bottom: 1px solid #f9f9f9; font-size: 0.85rem; }
+.session-summary-item strong { color: var(--text-main); display:block; margin-bottom: 0; }
+.session-summary-item span { color: var(--text-muted); font-size: 0.8rem; font-family: monospace; }
 
 .history-actions { display: flex; gap: 15px; }
