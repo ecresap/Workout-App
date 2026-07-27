@@ -1,88 +1,70 @@
 /**
- * StrengthOS - Complete Mobile PWA v38
- * Updates: 4-Day Block Program Architecture, Native Myo-Reps
+ * StrengthOS - Complete Mobile PWA v39
+ * Updates: 3-Day Split Architecture, Technique Notes, Custom RIR Targets
  */
 
-const STORAGE_KEY = 'strengthOS_data_v3'; // Bumped DB to clean slate for new plan
+const STORAGE_KEY = 'strengthOS_data_v4'; // Bumped DB to clean slate for new plan
 const DRAFT_KEY = 'strengthOS_active_draft';
-const APP_VERSION = 'v38.0';
+const APP_VERSION = 'v39.0';
 
-// --- 1. EXERCISE LIBRARY (Adapted for 4-Day Plan) ---
+// --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
-    { id: 'db_bench', name: 'Dumbbell Bench Press', muscle: 'chest' },
-    { id: 'dead_bug', name: 'Dead Bug', muscle: 'core' },
-    { id: 'db_incline', name: 'Incline Dumbbell Press', muscle: 'chest' },
-    { id: 'plank', name: 'Plank', muscle: 'core' },
-    { id: 'squeeze_press', name: 'Dumbbell Squeeze Press', muscle: 'chest' },
-    { id: 'oh_tricep_ext', name: 'Overhead DB Triceps Ext.', muscle: 'triceps' },
-    { id: 'cg_pushup', name: 'Close-Grip Push-Ups', muscle: 'triceps' },
-    { id: 'one_arm_row', name: 'One-Arm DB Row', muscle: 'back' },
-    { id: 'goblet_squat', name: 'Goblet Squat', muscle: 'legs' },
-    { id: 'rear_delt_raise', name: 'Rear Delt Raise', muscle: 'shoulders' },
-    { id: 'rev_lunge', name: 'Reverse Lunge', muscle: 'legs' },
-    { id: 'db_curl', name: 'Dumbbell Curl', muscle: 'biceps' },
-    { id: 'side_plank', name: 'Side Plank', muscle: 'core' },
-    { id: 'sup_db_curl', name: 'Supinated DB Curl', muscle: 'biceps' },
-    { id: 'hammer_curl', name: 'Hammer Curl', muscle: 'biceps' },
-    { id: 'rev_crunch', name: 'Reverse Crunch', muscle: 'core' },
-    { id: 'flat_db_press', name: 'Flat Dumbbell Press', muscle: 'chest' },
-    { id: 'conc_curl', name: 'Concentration Curl', muscle: 'biceps' },
-    { id: 'cg_db_press', name: 'Close-Grip DB Press', muscle: 'chest' },
-    { id: 'db_skullcrusher', name: 'Dumbbell Skull Crusher', muscle: 'triceps' },
-    { id: 'alt_db_curl', name: 'Alternating DB Curl', muscle: 'biceps' },
-    { id: 'db_shoulder_press', name: 'Dumbbell Shoulder Press', muscle: 'shoulders' },
-    { id: 'step_up', name: 'Step-Ups / Walking Lunges', muscle: 'legs' },
-    { id: 'farmer_carry', name: 'Farmer Carry', muscle: 'core' },
-    { id: 'bicycle', name: 'Bicycle Crunches', muscle: 'core' },
+    { id: 'bench_press', name: 'Bench Press (BB/DB/Machine)', muscle: 'chest' },
+    { id: 'inc_db_press', name: 'Incline DB Press', muscle: 'chest' },
+    { id: 'cable_fly', name: 'Cable Fly / Pec Deck', muscle: 'chest' },
     { id: 'lat_raise', name: 'Lateral Raise', muscle: 'shoulders' },
-    { id: 'tricep_ext', name: 'Triceps Kickback', muscle: 'triceps' }
+    { id: 'tricep_pressdown', name: 'Cable Triceps Pressdown', muscle: 'triceps' },
+    { id: 'leg_press', name: 'Leg Press', muscle: 'legs' },
+    { id: 'lat_pulldown', name: 'Pull-up / Lat Pulldown', muscle: 'back' },
+    { id: 'chest_supp_row', name: 'Chest-Supported Row', muscle: 'back' },
+    { id: 'one_arm_row', name: 'One-Arm Row', muscle: 'back' },
+    { id: 'rev_fly', name: 'Reverse Fly / Pec Deck', muscle: 'shoulders' },
+    { id: 'bicep_curl', name: 'Bicep Curl (DB/Cable/EZ)', muscle: 'biceps' },
+    { id: 'hammer_curl', name: 'Hammer Curl', muscle: 'biceps' },
+    { id: 'rdl', name: 'Romanian Deadlift', muscle: 'legs' },
+    { id: 'inc_mach_press', name: 'Incline Machine/DB Press', muscle: 'chest' },
+    { id: 'pushups', name: 'Push-ups', muscle: 'chest' },
+    { id: 'neut_pulldown', name: 'Neutral-Grip Lat Pulldown', muscle: 'back' },
+    { id: 'cable_row', name: 'Seated Cable Row', muscle: 'back' },
+    { id: 'preacher_curl', name: 'Preacher / Cable Curl', muscle: 'biceps' },
+    { id: 'oh_tricep_ext', name: 'Overhead Cable Triceps Ext.', muscle: 'triceps' },
+    { id: 'split_squat', name: 'Bulgarian Split Squat', muscle: 'legs' },
+    { id: 'leg_curl', name: 'Seated/Lying Leg Curl', muscle: 'legs' }
 ];
 
-// --- 2. THE 4-DAY BLOCK PLAN ---
+// --- 2. THE 3-DAY BLOCK PLAN ---
 const WORKOUT_PLANS = {
     day1: [
-        { id: 'db_bench', block: 'A', role: 'A', sets: 4, targetReps: '6-10', mode: 'normal' },
-        { id: 'dead_bug', block: 'A', role: 'B', sets: 4, targetReps: '8-12', mode: 'normal' },
-        { id: 'db_incline', block: 'B', role: 'A', sets: 3, targetReps: '8-12', mode: 'normal' },
-        { id: 'plank', block: 'B', role: 'B', sets: 3, targetReps: '30-60s', mode: 'normal' },
-        { id: 'squeeze_press', block: 'C', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' },
-        { id: 'oh_tricep_ext', block: 'D', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' },
-        { id: 'cg_pushup', block: 'E', role: 'A', sets: 2, targetReps: 'Near Fail', mode: 'normal' }
+        { id: 'bench_press', block: 'A', role: 'A', sets: 3, targetReps: '5-8', targetRir: '1-2', mode: 'normal', note: 'Keep shoulder blades stable; lower weight without shoulder discomfort.' },
+        { id: 'inc_db_press', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal', note: 'Keep shoulder blades stable; lower weight without shoulder discomfort.' },
+        { id: 'cable_fly', block: 'C', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal', note: 'Bring upper arms together rather than forcing hands to touch.' },
+        { id: 'lat_raise', block: 'D', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal' },
+        { id: 'tricep_pressdown', block: 'E', role: 'A', sets: 3, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
+        { id: 'leg_press', block: 'F', role: 'A', sets: 2, targetReps: '8-12', targetRir: '1-3', mode: 'normal' }
     ],
     day2: [
-        { id: 'one_arm_row', block: 'A', role: 'A', sets: 4, targetReps: '8-12', mode: 'normal' },
-        { id: 'goblet_squat', block: 'A', role: 'B', sets: 4, targetReps: '15-25', mode: 'normal' },
-        { id: 'rear_delt_raise', block: 'B', role: 'A', sets: 3, targetReps: '12-20', mode: 'normal' },
-        { id: 'rev_lunge', block: 'B', role: 'B', sets: 3, targetReps: '12-20', mode: 'normal' },
-        { id: 'db_curl', block: 'C', role: 'A', sets: 2, targetReps: '8-12', mode: 'normal' },
-        { id: 'side_plank', block: 'C', role: 'B', sets: 3, targetReps: 'Hold', mode: 'normal' },
-        { id: 'sup_db_curl', block: 'D', role: 'A', sets: 2, targetReps: '10-12', mode: 'normal' },
-        { id: 'hammer_curl', block: 'E', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' }
+        { id: 'lat_pulldown', block: 'A', role: 'A', sets: 3, targetReps: '6-10', targetRir: '1-2', mode: 'normal', note: 'Pull elbows toward sides without leaning excessively backward.' },
+        { id: 'chest_supp_row', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal', note: 'Allow shoulder blades to move naturally; keep torso controlled.' },
+        { id: 'one_arm_row', block: 'C', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal', note: 'Allow shoulder blades to move naturally; keep torso controlled.' },
+        { id: 'rev_fly', block: 'D', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal' },
+        { id: 'bicep_curl', block: 'E', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
+        { id: 'hammer_curl', block: 'F', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
+        { id: 'rdl', block: 'G', role: 'A', sets: 2, targetReps: '6-10', targetRir: '2-3', mode: 'normal', note: 'Push hips back. Stop at strong hamstring stretch; don\'t round lower back.' }
     ],
     day3: [
-        { id: 'db_incline', block: 'A', role: 'A', sets: 4, targetReps: '8-12', mode: 'normal' },
-        { id: 'rev_crunch', block: 'A', role: 'B', sets: 4, targetReps: '10-20', mode: 'normal' },
-        { id: 'flat_db_press', block: 'B', role: 'A', sets: 3, targetReps: '8-12', mode: 'normal' },
-        { id: 'conc_curl', block: 'B', role: 'B', sets: 2, targetReps: '10-15', mode: 'normal' },
-        { id: 'cg_db_press', block: 'C', role: 'A', sets: 3, targetReps: '8-12', mode: 'normal' },
-        { id: 'db_skullcrusher', block: 'D', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' },
-        { id: 'alt_db_curl', block: 'E', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' }
-    ],
-    day4: [
-        { id: 'db_shoulder_press', block: 'A', role: 'A', sets: 3, targetReps: '8-12', mode: 'normal' },
-        { id: 'one_arm_row', block: 'A', role: 'B', sets: 3, targetReps: '10-15', mode: 'normal' },
-        { id: 'rear_delt_raise', block: 'B', role: 'A', sets: 3, targetReps: '12-20', mode: 'normal' },
-        { id: 'step_up', block: 'B', role: 'B', sets: 3, targetReps: '15-25', mode: 'normal' },
-        { id: 'farmer_carry', block: 'C', role: 'A', sets: 4, targetReps: '30-60s', mode: 'normal' },
-        { id: 'bicycle', block: 'C', role: 'B', sets: 3, targetReps: 'Max', mode: 'normal' },
-        { id: 'lat_raise', block: 'D', role: 'A', sets: 5, targetReps: 'Myo-Reps', mode: 'myo' },
-        { id: 'hammer_curl', block: 'E', role: 'A (Optional)', sets: 5, targetReps: 'Myo-Reps', mode: 'myo', isBonus: true },
-        { id: 'tricep_ext', block: 'F', role: 'A (Optional)', sets: 5, targetReps: 'Myo-Reps', mode: 'myo', isBonus: true }
+        { id: 'inc_mach_press', block: 'A', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
+        { id: 'pushups', block: 'B', role: 'A', sets: 2, targetReps: '8-20', targetRir: '1-2', mode: 'normal' },
+        { id: 'neut_pulldown', block: 'C', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
+        { id: 'cable_row', block: 'D', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
+        { id: 'preacher_curl', block: 'E', role: 'A', sets: 3, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
+        { id: 'oh_tricep_ext', block: 'F', role: 'A', sets: 3, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
+        { id: 'split_squat', block: 'G', role: 'A', sets: 2, targetReps: '8-12', targetRir: '1-3', mode: 'normal' },
+        { id: 'leg_curl', block: 'H', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal' }
     ]
 };
 
 const initialState = {
-    profile: { age: 40, frequency: 4, timerDuration: 60 },
+    profile: { age: 40, frequency: 3, timerDuration: 60 },
     history: [],
     progression: {}, 
     activeExercises: {}, 
@@ -121,7 +103,7 @@ const Coach = {
 
     generateCalendarData() {
         const h = Store.data.history;
-        const schedule = [1, 2, 4, 5]; // Mon, Tue, Thu, Fri (Standard 4-day)
+        const schedule = [1, 3, 5]; // Mon, Wed, Fri (Standard 3-day)
         const today = new Date();
         const dayOfWeek = today.getDay(); 
         const daysSinceLastMonday = dayOfWeek + 6; 
@@ -148,7 +130,6 @@ const Coach = {
                     if (actual.type === 'day1') { status = 'done'; label = 'D1'; }
                     else if (actual.type === 'day2') { status = 'done'; label = 'D2'; }
                     else if (actual.type === 'day3') { status = 'done'; label = 'D3'; }
-                    else if (actual.type === 'day4') { status = 'done'; label = 'D4'; }
                     else { status = 'done'; label = '✓'; }
                 } else if (isScheduledDay) {
                     if (isPast && !isToday) status = 'missed';
@@ -211,9 +192,10 @@ const Coach = {
                 const prog = Store.data.progression[exDef.id] || { weight: 10 };
                 return { 
                     ...exDef, 
-                    ...item, // injects block, role, sets, targetReps, mode
+                    ...item, // injects block, role, sets, targetReps, targetRir, mode
                     id: exDef.id, 
-                    targetWeight: prog.weight
+                    targetWeight: prog.weight,
+                    note: item.note || undefined
                 };
             }) 
         };
@@ -296,7 +278,6 @@ const UI = {
         const lastD1 = h.map((s, i) => s.type === 'day1' ? i : -1).filter(i => i !== -1).pop();
         const lastD2 = h.map((s, i) => s.type === 'day2' ? i : -1).filter(i => i !== -1).pop();
         const lastD3 = h.map((s, i) => s.type === 'day3' ? i : -1).filter(i => i !== -1).pop();
-        const lastD4 = h.map((s, i) => s.type === 'day4' ? i : -1).filter(i => i !== -1).pop();
         const formatDate = (idx) => idx !== undefined && h[idx] ? new Date(h[idx].date).toLocaleDateString() : '--';
 
         const goals = Coach.generateWeeklyFocus();
@@ -311,11 +292,10 @@ const UI = {
             <div class="card"><h2>Activity Calendar</h2><div class="calendar-wrapper">${calHtml}</div></div>
             <div class="card">
                 <h2>History</h2>
-                <div class="summary-grid">
+                <div class="summary-grid" style="grid-template-columns: 1fr 1fr 1fr;">
                     <div class="summary-box"><div class="summary-label">Last Day 1</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastD1})">${formatDate(lastD1)}</div></div>
                     <div class="summary-box"><div class="summary-label">Last Day 2</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastD2})">${formatDate(lastD2)}</div></div>
                     <div class="summary-box"><div class="summary-label">Last Day 3</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastD3})">${formatDate(lastD3)}</div></div>
-                    <div class="summary-box"><div class="summary-label">Last Day 4</div><div class="summary-val clickable" onclick="UI.showSessionSummary(${lastD4})">${formatDate(lastD4)}</div></div>
                 </div>
                 <p style="color:var(--text-muted); text-align:center;">Total Workouts: <strong>${count}</strong></p>
             </div>
@@ -346,10 +326,9 @@ const UI = {
             <div style="padding:20px 0;">
                 <div class="card" style="text-align:center; padding: 30px 20px;">
                     <div style="font-size:3rem; margin-bottom:10px;">💪</div>
-                    <button class="btn-primary" onclick="UI.startNewSession('day1')">Day 1: Chest + Tri + Core</button>
-                    <button class="btn-primary" onclick="UI.startNewSession('day2')">Day 2: Back + Bi + Legs</button>
-                    <button class="btn-primary" onclick="UI.startNewSession('day3')">Day 3: Chest + Arms Spec.</button>
-                    <button class="btn-primary" onclick="UI.startNewSession('day4')">Day 4: Shoulders + Back</button>
+                    <button class="btn-primary" onclick="UI.startNewSession('day1')">Day 1: Chest, Triceps, Shoulders, Quads</button>
+                    <button class="btn-primary" onclick="UI.startNewSession('day2')">Day 2: Back, Biceps, Rear Delt, Hams</button>
+                    <button class="btn-primary" onclick="UI.startNewSession('day3')">Day 3: Chest, Back, Arms, Legs</button>
                 </div>
             </div>`; 
         }
@@ -418,10 +397,11 @@ const UI = {
 
             return `<div class="card" id="card-${i}">
                 ${!isHistoryEdit ? `<div class="swap-btn" onclick="UI.swapExercise(${i})">🔄</div>` : ''}
+                ${ex.note ? `<div class="toast">${ex.note}</div>` : ''}
                 <h3 style="margin-bottom:8px;">${badges} ${ex.name} ${ex.isBonus ? '<small style="color:#888; font-weight:normal;">(Optional)</small>' : ''}</h3>
                 <div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div>
                 <div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:15px; font-weight:600;">Target: ${ex.targetReps}</p>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:15px; font-weight:600;">Target: ${ex.targetReps} reps (Aim for ${ex.targetRir || '1-3'} RIR)</p>
                 ${setRows}
             </div>`;
         }).join('');
