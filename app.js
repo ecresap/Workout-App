@@ -325,6 +325,21 @@ function getWorkoutDay(dayId) {
     return Store.data.workoutDays.find(d => d.id === dayId);
 }
 
+
+Coach.getChartData = function(exId) {
+    return Store.data.history
+        .map(session => {
+            const ex = Array.isArray(session.exercises) ? session.exercises.find(e => e.id === exId) : null;
+            if (!ex || !Array.isArray(ex.sets) || ex.sets.length === 0) return null;
+            const workingSets = ex.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
+            if (!workingSets.length) return null;
+            const best = Math.max(...workingSets.map(s => Number(s.weight)));
+            return { date: session.date, val: best };
+        })
+        .filter(Boolean)
+        .slice(-12);
+};
+
 Coach.generateWorkout = function(dayType) {
     const day = getWorkoutDay(dayType);
     if (!day) return { type: dayType, isDeload: false, exercises: [] };
