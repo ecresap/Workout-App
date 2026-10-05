@@ -296,3 +296,7 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
     .workout-edit-row .mini-action { flex:1 1 auto; }
     .day-manager-row { align-items:flex-start; flex-direction:column; }
 }
+
+.workout-day-launch { margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #eef2f7; }
+.workout-day-launch .btn-primary { margin-bottom:6px; }
+.workout-day-actions { display:flex; justify-content:flex-end; gap:6px; }
