@@ -435,14 +435,21 @@ const UI = {
             this.container.innerHTML = `<div style="padding:20px 0;"><div class="card" style="border: 2px solid var(--warning);"><h3>Paused Session Found</h3><p style="margin-bottom:10px; font-size:0.9rem;">From: ${new Date(draft.startTime).toLocaleString()}</p><button class="btn-primary" style="background:var(--warning)" onclick="UI.resumeSession()">Resume Workout</button><button class="btn-secondary" onclick="UI.clearDraft()">Discard</button></div></div>`;
             return;
         }
-        const buttons = Store.data.workoutDays.map(day =>
-            `<button class="btn-primary" onclick="UI.startNewSession('${day.id}')">${UI.esc(day.name)}</button>`
+        const buttons = Store.data.workoutDays.map((day,index) =>
+            `<div class="workout-day-launch">
+                <button class="btn-primary" onclick="UI.startNewSession('${day.id}')">${UI.esc(day.name)}</button>
+                <div class="workout-day-actions">
+                    <button class="mini-action" onclick="UI.renameDayFromWorkout(${index})">Rename</button>
+                    <button class="mini-action danger" onclick="UI.deleteDayFromWorkout(${index})">Delete</button>
+                </div>
+            </div>`
         ).join('');
         this.container.innerHTML = `
             <div style="padding:20px 0;">
                 <div class="card" style="text-align:center; padding: 30px 20px;">
                     <div style="font-size:3rem; margin-bottom:10px;">💪</div>
-                    ${buttons || '<p>No workout days yet. Add one in Settings.</p>'}
+                    ${buttons || '<p>No workout days yet.</p>'}
+                    <button class="btn-secondary" onclick="UI.addDayFromWorkout()">+ Add Workout Day</button>
                 </div>
             </div>`;
     },
@@ -467,7 +474,8 @@ const UI = {
         let dateHeader = isHistoryEdit ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><label style="font-size:0.8rem; font-weight:bold;">Editing Date:</label><input type="date" id="edit-date-input" value="${new Date(Store.data.history[this.editingHistoryIndex].date).toISOString().split('T')[0]}" style="margin-bottom:0;"></div>` : '';
 
         const exercisesHtml = this.currentPlan.map((ex, i) => {
-            let weightVal = ex.targetWeight;
+            const setCount = Array.isArray(ex.sets) ? ex.sets.length : Math.max(1, Number(ex.sets) || 1);
+            let weightVal = ex._live?.weight ?? ex.targetWeight;
             if (isHistoryEdit) { if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight; } else if (dataMap[`weight-${i}`]) { weightVal = dataMap[`weight-${i}`]; }
             
             const isMyo = ex.mode === 'myo';
@@ -479,10 +487,10 @@ const UI = {
             if (isMyo) {
                 // Custom 5-set Myo structure
                 const baseLabels = ["Warm-up (12)", "Activation (10-15)", "Mini 1 (3-5)", "Mini 2 (3-5)", "Mini 3 (2-4)"];
-                const labels = Array.from({length: Math.max(1, Number(ex.sets)||5)}, (_,idx) => baseLabels[idx] || `Mini ${idx-1}`);
+                const labels = Array.from({length: setCount}, (_,idx) => baseLabels[idx] || `Mini ${idx-1}`);
                 setRows = labels.map((label, sIdx) => {
                     const s = sIdx + 1;
-                    let repVal = dataMap[`reps-${i}-${s}`] || '';
+                    let repVal = ex._live?.sets?.[s-1]?.reps ?? dataMap[`reps-${i}-${s}`] ?? '';
                     if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) repVal = setObj.reps; }
                     
                     return `<div class="myo-set-row">
@@ -493,9 +501,12 @@ const UI = {
                 }).join('');
             } else {
                 // Standard RIR logic
-                setRows = Array.from({length: ex.sets}, (_, k) => k + 1).map(s => {
+                setRows = Array.from({length: setCount}, (_, k) => k + 1).map(s => {
                     let repVal = '', rirVal = 2;
-                    if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else { repVal = dataMap[`reps-${i}-${s}`] || ''; rirVal = dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2; }
+                    if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else {
+                        repVal = ex._live?.sets?.[s-1]?.reps ?? dataMap[`reps-${i}-${s}`] ?? '';
+                        rirVal = ex._live?.sets?.[s-1]?.rir ?? (dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2);
+                    }
                     
                     return `<div class="set-row">
                         <span style="font-size:0.8rem; color:#888">Set ${s}</span>
@@ -556,6 +567,7 @@ const UI = {
         document.getElementById('swap-modal').classList.remove('active');
         const newEx = Store.data.exercises.find(e => e.id === newId);
         if (!newEx) return;
+        this.captureLiveInputs();
         const oldEx = this.currentPlan[index];
         const prog = Store.data.progression[newId] || { weight: 10 };
         this.currentPlan[index] = {
@@ -733,6 +745,20 @@ const UI = {
         return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     },
 
+    captureLiveInputs() {
+        if (!this.currentPlan) return;
+        this.currentPlan.forEach((ex, i) => {
+            const setCount = Array.isArray(ex.sets) ? ex.sets.length : Math.max(1, Number(ex.sets)||1);
+            ex._live = {
+                weight: Number(document.getElementById(`weight-${i}`)?.value) || ex.targetWeight || 0,
+                sets: Array.from({length:setCount}, (_,sIdx) => ({
+                    reps: document.getElementById(`reps-${i}-${sIdx+1}`)?.value ?? '',
+                    rir: Number(document.getElementById(`rir-${i}-${sIdx+1}`)?.value) || 0
+                }))
+            };
+        });
+    },
+
     persistCurrentPlan() {
         const day = getWorkoutDay(this.currentType);
         if (!day) return;
@@ -750,6 +776,7 @@ const UI = {
     },
 
     addSet(index) {
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets = Math.max(1, Number(this.currentPlan[index].sets)||1) + 1;
         this.persistCurrentPlan();
@@ -758,6 +785,7 @@ const UI = {
 
     removeSet(index) {
         if ((Number(this.currentPlan[index].sets)||1) <= 1) return;
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets -= 1;
         this.persistCurrentPlan();
@@ -765,6 +793,7 @@ const UI = {
     },
 
     toggleMyo(index) {
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         const ex = this.currentPlan[index];
         ex.mode = ex.mode === 'myo' ? 'normal' : 'myo';
@@ -776,6 +805,7 @@ const UI = {
     moveExercise(index, delta) {
         const next = index + delta;
         if (next < 0 || next >= this.currentPlan.length) return;
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         [this.currentPlan[index], this.currentPlan[next]] = [this.currentPlan[next], this.currentPlan[index]];
         this.currentPlan.forEach((ex,i) => ex.block = String.fromCharCode(65+i));
@@ -785,6 +815,7 @@ const UI = {
 
     removeExercise(index) {
         if (!confirm('Remove this exercise from this workout day? Historical workouts will not be changed.')) return;
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         this.currentPlan.splice(index,1);
         this.persistCurrentPlan();
@@ -792,6 +823,7 @@ const UI = {
     },
 
     addExerciseToWorkout() {
+        this.captureLiveInputs();
         this.scrapeAndSaveDraft();
         const allGrouped = Coach.getAllExercisesGrouped();
         let listHtml = '';
@@ -829,33 +861,37 @@ const UI = {
         this.renderLib();
     },
 
-    addDay() {
+    addDayFromWorkout() { this.addDay(false); this.renderWorkoutIntro(); },
+    renameDayFromWorkout(index) { this.renameDay(index, false); this.renderWorkoutIntro(); },
+    deleteDayFromWorkout(index) { this.deleteDay(index, false); this.renderWorkoutIntro(); },
+
+    addDay(refresh = true) {
         const name = prompt('Name for the new workout day:', `Day ${Store.data.workoutDays.length + 1}`);
         if (!name || !name.trim()) return;
         let id = 'day_' + Date.now().toString(36);
         while (Store.data.workoutDays.some(d => d.id === id)) id += '_x';
         Store.data.workoutDays.push({id, name:name.trim(), exercises:[]});
         Store.save();
-        this.renderSettings();
+        if (refresh) this.renderSettings();
     },
 
-    renameDay(index) {
+    renameDay(index, refresh = true) {
         const day = Store.data.workoutDays[index];
         if (!day) return;
         const name = prompt('Workout day name:', day.name);
         if (!name || !name.trim()) return;
         day.name = name.trim();
         Store.save();
-        this.renderSettings();
+        if (refresh) this.renderSettings();
     },
 
-    deleteDay(index) {
+    deleteDay(index, refresh = true) {
         const day = Store.data.workoutDays[index];
         if (!day) return;
         if (!confirm(`Delete "${day.name}" from future workout days? Historical sessions remain intact.`)) return;
         Store.data.workoutDays.splice(index,1);
         Store.save();
-        this.renderSettings();
+        if (refresh) this.renderSettings();
     },
     renderGuide() { this.pageTitle.innerText = 'Coach Logic'; this.container.innerHTML = `<div class="card"><div class="guide-block"><h3>🧠 Routine Format</h3><p>Your workout days are fully editable. Changes to exercises, order, set counts, and Myo-Reps are saved for the next time you use that day.</p></div><div class="guide-block"><h3>⚡ Myo-Reps</h3><p>Perform the Warm-up. Then do the Activation set to failure. Rest 15 seconds, do a Mini set, rest 15s, etc. Weights only increase if you get 10+ reps on the Activation set.</p></div><div class="guide-block"><h3>📈 Progression</h3><p>For standard sets, weights increase if you hit the top end of the rep range AND rate the last set as Easy (RIR 3).</p></div></div>`; }
 };
