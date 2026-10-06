@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.2';
+const APP_VERSION = 'v40.3';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -471,7 +471,6 @@ const UI = {
         if(view === 'dashboard') this.renderDash();
         if(view === 'workout') this.renderWorkoutIntro();
         if(view === 'exercises') this.renderLib();
-        if(view === 'progress') this.renderProgress();
         if(view === 'guide') this.renderGuide();
         if(view === 'settings') this.renderSettings();
     },
@@ -504,7 +503,10 @@ const UI = {
                 </div>
                 <p style="color:var(--text-muted); text-align:center;">Total Workouts: <strong>${count}</strong></p>
             </div>
+            <div class="home-section-title">Progress</div>
+            <div id="home-progress"></div>
             <div style="text-align:center; color:#9ca3af; font-size:0.75rem; margin: 20px 0;">StrengthOS ${APP_VERSION}</div>`;
+        this.renderProgress(null, document.getElementById('home-progress'), false);
     },
 
     showSessionSummary(index) {
@@ -729,15 +731,15 @@ const UI = {
         alert("Great job!");
         this.nav('dashboard');
     },
-    renderProgress(selectedExerciseId = null) {
-        this.pageTitle.innerText = 'Progress';
+    renderProgress(selectedExerciseId = null, target = this.container, standalone = true) {
+        if (standalone) this.pageTitle.innerText = 'Progress';
 
         const exerciseProgress = Coach.getExerciseProgress()
             .sort((a,b) => b.pct - a.pct);
         const muscleProgress = Coach.getMuscleGroupProgress();
 
         if (exerciseProgress.length === 0) {
-            this.container.innerHTML = `
+            target.innerHTML = `
                 <div class="card">
                     <h2>Strength Progress</h2>
                     <p class="progress-empty">Complete the same weighted exercise in at least two saved workouts to start seeing progress here.</p>
@@ -782,7 +784,7 @@ const UI = {
             `<option value="${e.id}" ${e.id === selected.id ? 'selected' : ''}>${UI.esc(e.name)}</option>`
         ).join('');
 
-        this.container.innerHTML = `
+        target.innerHTML = `
             <div class="progress-summary-grid">
                 <div class="progress-stat-card">
                     <span>Typical Strength Change</span>
