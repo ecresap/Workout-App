@@ -478,3 +478,10 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
     .nav-btn .icon { font-size:1.35rem; }
     .strength-detail-head { gap:8px; }
 }
+
+.home-section-title {
+    font-size:1.15rem;
+    font-weight:800;
+    color:var(--text-main);
+    margin:6px 2px 12px;
+}
