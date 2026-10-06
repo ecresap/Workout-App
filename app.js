@@ -1234,6 +1234,15 @@ const UI = {
             }
         });
 
+        // Refresh the destination exercise's future progression target from its latest saved workout.
+        const latestTargetSession = Store.data.history
+            .filter(session => session.exercises?.some(ex => ex.id === targetId))
+            .sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+        if (latestTargetSession) {
+            const latestTargetExercise = latestTargetSession.exercises.find(ex => ex.id === targetId);
+            if (latestTargetExercise) Coach.updateProgression({exercises:[latestTargetExercise]});
+        }
+
         Store.save();
         alert(`Moved ${selected.length} workout${selected.length===1?'':'s'} to ${targetName}.`);
         this.renderHistoryMoveTool(sourceId, targetId);
