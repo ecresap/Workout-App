@@ -354,9 +354,15 @@ Coach.getStrengthSeries = function(exId) {
         .map(session => {
             const ex = Array.isArray(session.exercises) ? session.exercises.find(e => e.id === exId) : null;
             if (!ex || !Array.isArray(ex.sets)) return null;
-            const estimates = ex.sets
-                .map(s => Coach.estimate1RM(s.weight, s.reps))
-                .filter(v => Number.isFinite(v));
+            let estimates;
+            if (ex.mode === 'myo' && ex.sets[1]) {
+                const activationEstimate = Coach.estimate1RM(ex.sets[1].weight, ex.sets[1].reps);
+                estimates = Number.isFinite(activationEstimate) ? [activationEstimate] : [];
+            } else {
+                estimates = ex.sets
+                    .map(s => Coach.estimate1RM(s.weight, s.reps))
+                    .filter(v => Number.isFinite(v));
+            }
             if (!estimates.length) return null;
             return {
                 date: session.date,
