@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.0';
+const APP_VERSION = 'v40.1';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -482,8 +482,13 @@ const UI = {
         this.renderActiveSession(false);
     },
 
-    renderActiveSession(isResumeOrEdit) {
+    renderActiveSession(isResumeOrEdit, options = {}) {
         const isHistoryEdit = this.editingHistoryIndex !== null;
+        const preserveScroll = options.preserveScroll === true;
+        const previousScrollY = preserveScroll ? window.scrollY : 0;
+        const anchorIndex = preserveScroll && Number.isInteger(options.anchorIndex) ? options.anchorIndex : null;
+        const anchorBefore = anchorIndex !== null ? document.getElementById(`card-${anchorIndex}`) : null;
+        const anchorTopBefore = anchorBefore ? anchorBefore.getBoundingClientRect().top : null;
         let dataMap = {}; if (isResumeOrEdit && !isHistoryEdit) { const draft = Store.getDraft(); dataMap = draft?.inputs || {}; }
         const legend = `<div class="rir-legend-box"><span class="rir-legend-title">RIR Scale</span>0 = Failure | 1 = Hard | 2 = Sweet Spot | 3+ = Easy</div>`;
         let dateHeader = isHistoryEdit ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><label style="font-size:0.8rem; font-weight:bold;">Editing Date:</label><input type="date" id="edit-date-input" value="${new Date(Store.data.history[this.editingHistoryIndex].date).toISOString().split('T')[0]}" style="margin-bottom:0;"></div>` : '';
@@ -560,7 +565,20 @@ const UI = {
         if (isHistoryEdit) actionBtn = `<button class="btn-primary" onclick="UI.saveEditedHistory()">Save Changes</button> <button class="btn-secondary" onclick="UI.renderHistoryManager()">Cancel</button>`;
         const addExerciseBtn = !isHistoryEdit ? '<button class="btn-secondary" style="margin-bottom:10px" onclick="UI.addExerciseToWorkout()">+ Add Exercise</button>' : '';
         this.container.innerHTML = `${dateHeader}${legend}${exercisesHtml}${addExerciseBtn}${actionBtn}`;
-        window.scrollTo(0,0);
+
+        if (preserveScroll) {
+            requestAnimationFrame(() => {
+                const anchorAfter = anchorIndex !== null ? document.getElementById(`card-${anchorIndex}`) : null;
+                if (anchorAfter && anchorTopBefore !== null) {
+                    const delta = anchorAfter.getBoundingClientRect().top - anchorTopBefore;
+                    window.scrollTo({ top: Math.max(0, previousScrollY + delta), behavior: 'auto' });
+                } else {
+                    window.scrollTo({ top: previousScrollY, behavior: 'auto' });
+                }
+            });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+        }
     },
 
     swapExercise(index) { 
@@ -604,7 +622,7 @@ const UI = {
             Store.save();
         }
         this.scrapeAndSaveDraft();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
     },
 
     setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(Store.data.profile.timerDuration); } },
@@ -795,7 +813,7 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets = Math.max(1, Number(this.currentPlan[index].sets)||1) + 1;
         this.persistCurrentPlan();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
     },
 
     removeSet(index) {
@@ -804,7 +822,7 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets -= 1;
         this.persistCurrentPlan();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
     },
 
     toggleMyo(index) {
@@ -814,7 +832,7 @@ const UI = {
         ex.mode = ex.mode === 'myo' ? 'normal' : 'myo';
         if (ex.mode === 'myo' && Number(ex.sets) < 5) ex.sets = 5;
         this.persistCurrentPlan();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
     },
 
     moveExercise(index, delta) {
@@ -825,7 +843,7 @@ const UI = {
         [this.currentPlan[index], this.currentPlan[next]] = [this.currentPlan[next], this.currentPlan[index]];
         this.currentPlan.forEach((ex,i) => ex.block = String.fromCharCode(65+i));
         this.persistCurrentPlan();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: next });
     },
 
     removeExercise(index) {
@@ -834,7 +852,7 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan.splice(index,1);
         this.persistCurrentPlan();
-        this.renderActiveSession(true);
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: Math.min(index, this.currentPlan.length - 1) });
     },
 
     addExerciseToWorkout() {
@@ -863,7 +881,8 @@ const UI = {
         document.getElementById('swap-modal').classList.remove('active');
         this.persistCurrentPlan();
         this.scrapeAndSaveDraft();
-        this.renderActiveSession(true);
+        const newIndex = this.currentPlan.length - 1;
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: newIndex });
     },
 
     renameExercise(exId) {
