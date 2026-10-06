@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.0';
+const APP_VERSION = 'v41.1';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -42,6 +42,7 @@ const DEFAULT_EXERCISES = [
     { id: 'arnold_press', name: 'Arnold Press', muscle: 'shoulders' },
     { id: 'db_front_raise', name: 'Dumbbell Front Raise', muscle: 'shoulders' },
     { id: 'db_y_raise', name: 'Incline Dumbbell Y-Raise', muscle: 'shoulders' },
+    { id: 'db_shrugs', name: 'Dumbbell Shrugs', muscle: 'shoulders' },
     { id: 'goblet_squat', name: 'Goblet Squat', muscle: 'legs' },
     { id: 'db_rdl', name: 'Dumbbell Romanian Deadlift', muscle: 'hamstrings' },
     { id: 'db_reverse_lunge', name: 'Dumbbell Reverse Lunge', muscle: 'legs' },
