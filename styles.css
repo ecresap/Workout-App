@@ -485,3 +485,26 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
     color:var(--text-main);
     margin:6px 2px 12px;
 }
+
+.progress-range-toggle {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    background:#e5e7eb;
+    padding:4px;
+    border-radius:12px;
+    margin:0 0 16px;
+}
+.progress-range-toggle button {
+    padding:10px 8px;
+    border-radius:9px;
+    background:transparent;
+    color:var(--text-muted);
+    font-size:.82rem;
+    font-weight:800;
+}
+.progress-range-toggle button.active {
+    background:#fff;
+    color:var(--primary);
+    box-shadow:0 1px 4px rgba(0,0,0,.10);
+}
