@@ -658,3 +658,25 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
         flex-direction:column;
     }
 }
+
+.template-targets {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin-top:10px;
+}
+.template-targets label {
+    color:var(--text-muted);
+    font-size:.68rem;
+    font-weight:800;
+    text-transform:uppercase;
+}
+.template-targets input {
+    margin:5px 0 0;
+    padding:9px 10px;
+    font-size:.88rem;
+    text-transform:none;
+}
+@media (max-width:430px) {
+    .template-targets { grid-template-columns:1fr; }
+}
