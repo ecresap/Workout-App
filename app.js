@@ -676,6 +676,8 @@ const UI = {
             } 
         } 
         const modal = document.getElementById('swap-modal'); 
+        const title = modal.querySelector('h3');
+        if (title) title.innerText = 'Swap Exercise';
         document.getElementById('swap-list-container').innerHTML = listHtml; 
         modal.classList.add('active'); 
     },
@@ -997,6 +999,14 @@ const UI = {
                         </div>
                         <button class="mini-action ${isMyo ? 'myo-active' : ''}" onclick="UI.toggleTemplateMyo(${dayIndex},${index})">⚡ Myo-Reps: ${isMyo ? 'On' : 'Off'}</button>
                     </div>
+                    <div class="template-targets">
+                        <label>Target Reps
+                            <input type="text" id="template-reps-${dayIndex}-${index}" value="${UI.esc(item.targetReps || '8-12')}" onchange="UI.updateTemplateTargets(${dayIndex},${index})">
+                        </label>
+                        <label>Target RIR
+                            <input type="text" id="template-rir-${dayIndex}-${index}" value="${UI.esc(item.targetRir || '1-2')}" onchange="UI.updateTemplateTargets(${dayIndex},${index})">
+                        </label>
+                    </div>
                 </div>`;
         }).join('');
 
@@ -1042,6 +1052,16 @@ const UI = {
         item.sets = Math.max(1, (Number(item.sets)||1) + delta);
         this.saveTemplateDay(dayIndex);
         this.renderWorkoutDayEditor(dayIndex);
+    },
+
+    updateTemplateTargets(dayIndex, index) {
+        const item = Store.data.workoutDays[dayIndex]?.exercises[index];
+        if (!item) return;
+        const reps = document.getElementById(`template-reps-${dayIndex}-${index}`)?.value.trim();
+        const rir = document.getElementById(`template-rir-${dayIndex}-${index}`)?.value.trim();
+        if (reps) item.targetReps = reps;
+        if (rir) item.targetRir = rir;
+        this.saveTemplateDay(dayIndex);
     },
 
     toggleTemplateMyo(dayIndex, index) {
@@ -1417,8 +1437,11 @@ const UI = {
                 `<div class="swap-item" onclick="UI.selectAddedExercise('${ex.id}')"><div><strong>${UI.esc(ex.name)}</strong></div><span class="swap-select-btn">Add</span></div>`
             ).join('');
         }
+        const modal = document.getElementById('swap-modal');
+        const title = modal.querySelector('h3');
+        if (title) title.innerText = 'Add Exercise';
         document.getElementById('swap-list-container').innerHTML = listHtml;
-        document.getElementById('swap-modal').classList.add('active');
+        modal.classList.add('active');
     },
 
     selectAddedExercise(exId) {
