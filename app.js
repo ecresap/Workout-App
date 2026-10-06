@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.4';
+const APP_VERSION = 'v40.5';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -391,6 +391,10 @@ Coach.getExerciseProgress = function(months = 1) {
         .filter(Boolean);
 };
 
+Coach.isLegMuscle = function(muscle) {
+    return ['legs','quads','hamstrings','glutes','calves'].includes(muscle);
+};
+
 Coach.getMuscleGroupProgress = function(months = 1) {
     const groupFor = muscle => {
         if (muscle === 'chest') return 'Chest';
@@ -401,7 +405,9 @@ Coach.getMuscleGroupProgress = function(months = 1) {
         return 'Core';
     };
     const buckets = {};
-    Coach.getExerciseProgress(months).forEach(item => {
+    Coach.getExerciseProgress(months)
+        .filter(item => !Coach.isLegMuscle(item.muscle))
+        .forEach(item => {
         const group = groupFor(item.muscle);
         if (!buckets[group]) buckets[group] = [];
         buckets[group].push(item.pct);
@@ -733,6 +739,7 @@ const UI = {
         const months = this.progressMonths === 2 ? 2 : 1;
         const exerciseProgress = Coach.getExerciseProgress(months)
             .sort((a,b) => b.pct - a.pct);
+        const summaryProgress = exerciseProgress.filter(item => !Coach.isLegMuscle(item.muscle));
         const muscleProgress = Coach.getMuscleGroupProgress(months);
 
         const toggleHtml = `
@@ -756,12 +763,12 @@ const UI = {
         }
 
         const selected = exerciseProgress.find(e => e.id === selectedExerciseId) || exerciseProgress[0];
-        const overallValues = exerciseProgress.map(e => e.pct).sort((a,b) => a-b);
+        const overallValues = summaryProgress.map(e => e.pct).sort((a,b) => a-b);
         const overallMid = Math.floor(overallValues.length / 2);
-        const overallPct = overallValues.length % 2
+        const overallPct = overallValues.length === 0 ? null : (overallValues.length % 2
             ? overallValues[overallMid]
-            : (overallValues[overallMid-1] + overallValues[overallMid]) / 2;
-        const best = exerciseProgress[0];
+            : (overallValues[overallMid-1] + overallValues[overallMid]) / 2);
+        const best = summaryProgress.length ? summaryProgress[0] : null;
 
         const muscleMax = Math.max(1, ...muscleProgress.map(m => Math.abs(m.pct)));
         const muscleHtml = muscleProgress.map(m => {
@@ -790,13 +797,13 @@ const UI = {
             <div class="progress-summary-grid">
                 <div class="progress-stat-card">
                     <span>Typical Weight Change</span>
-                    <strong class="${overallPct >= 0 ? 'positive' : 'negative'}">${overallPct > 0 ? '+' : ''}${overallPct.toFixed(1)}%</strong>
-                    <small>Median across tracked exercises</small>
+                    <strong class="${overallPct === null ? '' : (overallPct >= 0 ? 'positive' : 'negative')}">${overallPct === null ? '—' : `${overallPct > 0 ? '+' : ''}${overallPct.toFixed(1)}%`}</strong>
+                    <small>Median across tracked non-leg exercises</small>
                 </div>
                 <div class="progress-stat-card">
                     <span>Biggest Improvement</span>
-                    <strong>${UI.esc(best.name)}</strong>
-                    <small class="${best.pct >= 0 ? 'positive' : 'negative'}">${best.pct > 0 ? '+' : ''}${best.pct.toFixed(1)}%</small>
+                    <strong>${best ? UI.esc(best.name) : '—'}</strong>
+                    <small class="${best ? (best.pct >= 0 ? 'positive' : 'negative') : ''}">${best ? `${best.pct > 0 ? '+' : ''}${best.pct.toFixed(1)}%` : 'No qualifying data'}</small>
                 </div>
             </div>
 
@@ -818,11 +825,11 @@ const UI = {
                 <div class="progress-section-head">
                     <div>
                         <h2>Muscle Group Progress</h2>
-                        <p>Median working-weight change across exercises in each group.</p>
+                        <p>Median working-weight change across non-leg muscle groups.</p>
                     </div>
                 </div>
                 <div class="muscle-progress-list">${muscleHtml || '<p class="progress-empty">More repeated exercise data is needed.</p>'}</div>
-                <p class="progress-note">Muscle Group Progress reflects changes in actual logged working weight for completed sets. It is not a measurement of muscle size or hypertrophy.</p>
+                <p class="progress-note">Leg exercises are excluded from summary and grouped calculations. Individual leg exercises remain available in Strength Progress. Muscle Group Progress reflects working-weight changes, not measured muscle size or hypertrophy.</p>
             </div>
 
             <div class="progress-method">
