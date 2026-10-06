@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.1';
+const APP_VERSION = 'v40.2';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -340,6 +340,84 @@ Coach.getChartData = function(exId) {
         .slice(-12);
 };
 
+Coach.estimate1RM = function(weight, reps) {
+    const w = Number(weight);
+    const r = Number(reps);
+    if (!(w > 0) || !(r > 0)) return null;
+    // Epley estimate. Reps are capped at 30 to avoid extreme high-rep extrapolation.
+    const cappedReps = Math.min(r, 30);
+    return w * (1 + cappedReps / 30);
+};
+
+Coach.getStrengthSeries = function(exId) {
+    return Store.data.history
+        .map(session => {
+            const ex = Array.isArray(session.exercises) ? session.exercises.find(e => e.id === exId) : null;
+            if (!ex || !Array.isArray(ex.sets)) return null;
+            let estimates;
+            if (ex.mode === 'myo' && ex.sets[1]) {
+                const activationEstimate = Coach.estimate1RM(ex.sets[1].weight, ex.sets[1].reps);
+                estimates = Number.isFinite(activationEstimate) ? [activationEstimate] : [];
+            } else {
+                estimates = ex.sets
+                    .map(s => Coach.estimate1RM(s.weight, s.reps))
+                    .filter(v => Number.isFinite(v));
+            }
+            if (!estimates.length) return null;
+            return {
+                date: session.date,
+                value: Math.max(...estimates)
+            };
+        })
+        .filter(Boolean)
+        .sort((a,b) => new Date(a.date) - new Date(b.date));
+};
+
+Coach.getExerciseProgress = function() {
+    return Store.data.exercises
+        .map(ex => {
+            const series = Coach.getStrengthSeries(ex.id);
+            if (series.length < 2) return null;
+            const first = series[0].value;
+            const latest = series[series.length - 1].value;
+            if (!(first > 0)) return null;
+            return {
+                id: ex.id,
+                name: ex.name,
+                muscle: ex.muscle,
+                first,
+                latest,
+                pct: ((latest - first) / first) * 100,
+                sessions: series.length,
+                series
+            };
+        })
+        .filter(Boolean);
+};
+
+Coach.getMuscleGroupProgress = function() {
+    const groupFor = muscle => {
+        if (muscle === 'chest') return 'Chest';
+        if (muscle === 'back') return 'Back';
+        if (muscle === 'shoulders') return 'Shoulders';
+        if (['biceps','triceps'].includes(muscle)) return 'Arms';
+        if (['legs','quads','hamstrings','glutes','calves'].includes(muscle)) return 'Legs';
+        return 'Core';
+    };
+    const buckets = {};
+    Coach.getExerciseProgress().forEach(item => {
+        const group = groupFor(item.muscle);
+        if (!buckets[group]) buckets[group] = [];
+        buckets[group].push(item.pct);
+    });
+    return Object.entries(buckets).map(([group, values]) => {
+        const sorted = values.slice().sort((a,b) => a-b);
+        const mid = Math.floor(sorted.length / 2);
+        const median = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+        return { group, pct: median, exercises: values.length };
+    }).sort((a,b) => b.pct - a.pct);
+};
+
 Coach.generateWorkout = function(dayType) {
     const day = getWorkoutDay(dayType);
     if (!day) return { type: dayType, isDeload: false, exercises: [] };
@@ -393,6 +471,7 @@ const UI = {
         if(view === 'dashboard') this.renderDash();
         if(view === 'workout') this.renderWorkoutIntro();
         if(view === 'exercises') this.renderLib();
+        if(view === 'progress') this.renderProgress();
         if(view === 'guide') this.renderGuide();
         if(view === 'settings') this.renderSettings();
     },
@@ -650,6 +729,166 @@ const UI = {
         alert("Great job!");
         this.nav('dashboard');
     },
+    renderProgress(selectedExerciseId = null) {
+        this.pageTitle.innerText = 'Progress';
+
+        const exerciseProgress = Coach.getExerciseProgress()
+            .sort((a,b) => b.pct - a.pct);
+        const muscleProgress = Coach.getMuscleGroupProgress();
+
+        if (exerciseProgress.length === 0) {
+            this.container.innerHTML = `
+                <div class="card">
+                    <h2>Strength Progress</h2>
+                    <p class="progress-empty">Complete the same weighted exercise in at least two saved workouts to start seeing progress here.</p>
+                </div>
+                <div class="card">
+                    <h2>Muscle Group Progress</h2>
+                    <p class="progress-note">This view uses changes in logged exercise strength. It does not measure muscle size.</p>
+                </div>`;
+            return;
+        }
+
+        const selected = exerciseProgress.find(e => e.id === selectedExerciseId)
+            || exerciseProgress[0];
+
+        const overallValues = exerciseProgress.map(e => e.pct).sort((a,b) => a-b);
+        const overallMid = Math.floor(overallValues.length / 2);
+        const overallPct = overallValues.length % 2
+            ? overallValues[overallMid]
+            : (overallValues[overallMid-1] + overallValues[overallMid]) / 2;
+
+        const best = exerciseProgress[0];
+
+        const muscleMax = Math.max(1, ...muscleProgress.map(m => Math.abs(m.pct)));
+        const muscleHtml = muscleProgress.map(m => {
+            const width = Math.min(100, Math.max(4, (Math.abs(m.pct) / muscleMax) * 100));
+            const cls = m.pct >= 0 ? 'positive' : 'negative';
+            const sign = m.pct > 0 ? '+' : '';
+            return `
+                <div class="muscle-progress-row">
+                    <div class="muscle-progress-head">
+                        <span>${m.group}</span>
+                        <strong class="${cls}">${sign}${m.pct.toFixed(1)}%</strong>
+                    </div>
+                    <div class="muscle-progress-track">
+                        <div class="muscle-progress-fill ${cls}" style="width:${width}%"></div>
+                    </div>
+                    <small>${m.exercises} tracked exercise${m.exercises === 1 ? '' : 's'}</small>
+                </div>`;
+        }).join('');
+
+        const options = exerciseProgress.map(e =>
+            `<option value="${e.id}" ${e.id === selected.id ? 'selected' : ''}>${UI.esc(e.name)}</option>`
+        ).join('');
+
+        this.container.innerHTML = `
+            <div class="progress-summary-grid">
+                <div class="progress-stat-card">
+                    <span>Typical Strength Change</span>
+                    <strong class="${overallPct >= 0 ? 'positive' : 'negative'}">${overallPct > 0 ? '+' : ''}${overallPct.toFixed(1)}%</strong>
+                    <small>Median across tracked exercises</small>
+                </div>
+                <div class="progress-stat-card">
+                    <span>Biggest Improvement</span>
+                    <strong>${UI.esc(best.name)}</strong>
+                    <small class="${best.pct >= 0 ? 'positive' : 'negative'}">${best.pct > 0 ? '+' : ''}${best.pct.toFixed(1)}%</small>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="progress-section-head">
+                    <div>
+                        <h2>Strength Progress</h2>
+                        <p>Estimated strength from your logged weight and reps.</p>
+                    </div>
+                </div>
+                <label class="progress-select-label" for="progress-exercise-select">Exercise</label>
+                <select id="progress-exercise-select" onchange="UI.updateProgressExercise(this.value)">
+                    ${options}
+                </select>
+                <div id="strength-progress-detail"></div>
+            </div>
+
+            <div class="card">
+                <div class="progress-section-head">
+                    <div>
+                        <h2>Muscle Group Progress</h2>
+                        <p>Median strength change across exercises in each group.</p>
+                    </div>
+                </div>
+                <div class="muscle-progress-list">${muscleHtml || '<p class="progress-empty">More repeated exercise data is needed.</p>'}</div>
+                <p class="progress-note">Muscle Group Progress reflects training-strength changes in the exercises assigned to each muscle group. It is not a measurement of muscle size or hypertrophy.</p>
+            </div>
+
+            <div class="progress-method">
+                Strength is estimated from your best logged set in each workout using the Epley estimated 1RM formula. High-rep sets are capped at 30 reps for the estimate.
+            </div>
+        `;
+
+        this.renderStrengthProgressDetail(selected.id);
+    },
+
+    updateProgressExercise(exId) {
+        this.renderStrengthProgressDetail(exId);
+    },
+
+    renderStrengthProgressDetail(exId) {
+        const detail = document.getElementById('strength-progress-detail');
+        if (!detail) return;
+        const item = Coach.getExerciseProgress().find(e => e.id === exId);
+        if (!item) {
+            detail.innerHTML = '<p class="progress-empty">Not enough data for this exercise.</p>';
+            return;
+        }
+
+        const series = item.series;
+        const w = 520, h = 190, padX = 24, padY = 28;
+        const values = series.map(d => d.value);
+        let min = Math.min(...values);
+        let max = Math.max(...values);
+        if (min === max) { min *= 0.95; max *= 1.05; }
+        const range = Math.max(1, max - min);
+        const xFor = i => series.length === 1 ? w / 2 : padX + (i / (series.length - 1)) * (w - padX * 2);
+        const yFor = v => h - padY - ((v - min) / range) * (h - padY * 2);
+        const points = series.map((d,i) => `${xFor(i)},${yFor(d.value)}`).join(' ');
+        const dots = series.map((d,i) => `
+            <circle cx="${xFor(i)}" cy="${yFor(d.value)}" r="4" class="progress-chart-dot"></circle>
+        `).join('');
+
+        const firstDate = new Date(series[0].date).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+        const latestDate = new Date(series[series.length-1].date).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+        const sign = item.pct > 0 ? '+' : '';
+
+        detail.innerHTML = `
+            <div class="strength-detail-head">
+                <div>
+                    <span>Then</span>
+                    <strong>${item.first.toFixed(1)} lb</strong>
+                    <small>${firstDate}</small>
+                </div>
+                <div class="strength-change ${item.pct >= 0 ? 'positive' : 'negative'}">${sign}${item.pct.toFixed(1)}%</div>
+                <div>
+                    <span>Now</span>
+                    <strong>${item.latest.toFixed(1)} lb</strong>
+                    <small>${latestDate}</small>
+                </div>
+            </div>
+            <div class="progress-chart-wrap">
+                <svg class="progress-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Estimated strength trend">
+                    <line x1="${padX}" y1="${h-padY}" x2="${w-padX}" y2="${h-padY}" class="progress-chart-axis"></line>
+                    <polyline points="${points}" class="progress-chart-line"></polyline>
+                    ${dots}
+                </svg>
+            </div>
+            <div class="progress-chart-caption">
+                <span>${firstDate}</span>
+                <span>${series.length} workouts</span>
+                <span>${latestDate}</span>
+            </div>
+        `;
+    },
+
     renderLib() {
         this.pageTitle.innerText = 'Exercise Library';
         const groups = { 'Chest': ['chest'], 'Back': ['back'], 'Shoulders': ['shoulders'], 'Legs': ['legs','quads','hamstrings','glutes','calves'], 'Arms': ['biceps','triceps'], 'Core': ['core'] };
