@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.5';
+const APP_VERSION = 'v41.0';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -444,6 +444,7 @@ Coach.generateWorkout = function(dayType) {
 
 const UI = {
     timerInterval: null, editingHistoryIndex: null, pendingWorkoutType: null, progressMonths: 1,
+    templateEditDayIndex: null, templatePicker: null, historyMoveSelection: new Set(),
 
     init() {
         this.container = document.getElementById('main-container');
@@ -675,6 +676,8 @@ const UI = {
             } 
         } 
         const modal = document.getElementById('swap-modal'); 
+        const title = modal.querySelector('h3');
+        if (title) title.innerText = 'Swap Exercise';
         document.getElementById('swap-list-container').innerHTML = listHtml; 
         modal.classList.add('active'); 
     },
@@ -935,12 +938,20 @@ const UI = {
         const timerVal = p.timerDuration || 60;
         const daysHtml = Store.data.workoutDays.map((d,i) =>
             `<div class="day-manager-row"><span><strong>${UI.esc(d.name)}</strong><small>${d.exercises.length} exercises</small></span>
-                <div><button class="mini-action" onclick="UI.renameDay(${i})">Rename</button>
+                <div><button class="mini-action" onclick="UI.renderWorkoutDayEditor(${i})">Edit</button>
+                <button class="mini-action" onclick="UI.renameDay(${i})">Rename</button>
                 <button class="mini-action danger" onclick="UI.deleteDay(${i})">Delete</button></div></div>`
         ).join('');
         this.container.innerHTML = `
-            <div class="card"><h2>Workout Days</h2>${daysHtml}<button class="btn-secondary" onclick="UI.addDay()">+ Add Day</button></div>
-            <div class="card"><h2>Account</h2><button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button></div>
+            <div class="card">
+                <h2>Workout Days</h2>
+                <p class="settings-help">Edit the exercise list here for future workouts. Changes made during an active workout also continue to save back to that workout day.</p>
+                ${daysHtml}<button class="btn-secondary" onclick="UI.addDay()">+ Add Day</button>
+            </div>
+            <div class="card"><h2>History</h2>
+                <button class="btn-secondary" onclick="UI.renderHistoryManager()">Manage Recent History (Edit/Delete)</button>
+                <button class="btn-secondary" onclick="UI.renderHistoryMoveTool()">Move / Merge Exercise History</button>
+            </div>
             <div class="card"><h2>Profile</h2>
                 <label>Frequency (Days/Week)</label><select id="s-freq"><option value="2" ${p.frequency==2?'selected':''}>2</option><option value="3" ${p.frequency==3?'selected':''}>3</option><option value="4" ${p.frequency==4?'selected':''}>4</option><option value="5" ${p.frequency==5?'selected':''}>5</option><option value="6" ${p.frequency==6?'selected':''}>6</option></select>
                 <label>Rest Timer (Seconds)</label><input type="number" id="s-timer" value="${timerVal}" style="margin-bottom:15px;">
@@ -953,6 +964,310 @@ const UI = {
                 <button class="btn-secondary" onclick="UI.importBackup()">Import Backup (Merge History)</button>
             </div>`;
     },
+    renderWorkoutDayEditor(dayIndex) {
+        const day = Store.data.workoutDays[dayIndex];
+        if (!day) { this.renderSettings(); return; }
+        this.templateEditDayIndex = dayIndex;
+        this.pageTitle.innerText = 'Edit Workout Day';
+
+        const rows = day.exercises.map((item, index) => {
+            const ex = Store.data.exercises.find(e => e.id === item.id) || {name:'Unknown Exercise'};
+            const isMyo = item.mode === 'myo';
+            return `
+                <div class="template-exercise-row">
+                    <div class="template-exercise-main">
+                        <span class="template-order">${index + 1}</span>
+                        <div>
+                            <strong>${UI.esc(ex.name)}</strong>
+                            <small>${item.sets || 1} sets • ${UI.esc(item.targetReps || '8-12')} reps${isMyo ? ' • Myo-Reps' : ''}</small>
+                        </div>
+                    </div>
+                    <div class="template-actions">
+                        <button class="mini-action" onclick="UI.moveTemplateExercise(${dayIndex},${index},-1)" title="Move up">↑</button>
+                        <button class="mini-action" onclick="UI.moveTemplateExercise(${dayIndex},${index},1)" title="Move down">↓</button>
+                        <button class="mini-action" onclick="UI.openTemplateExercisePicker(${dayIndex},${index},'replace')">Swap</button>
+                        <button class="mini-action danger" onclick="UI.removeTemplateExercise(${dayIndex},${index})">Remove</button>
+                    </div>
+                    <div class="template-config">
+                        <div>
+                            <label>Sets</label>
+                            <div class="template-stepper">
+                                <button class="mini-action" onclick="UI.changeTemplateSets(${dayIndex},${index},-1)">−</button>
+                                <strong>${Math.max(1, Number(item.sets)||1)}</strong>
+                                <button class="mini-action" onclick="UI.changeTemplateSets(${dayIndex},${index},1)">+</button>
+                            </div>
+                        </div>
+                        <button class="mini-action ${isMyo ? 'myo-active' : ''}" onclick="UI.toggleTemplateMyo(${dayIndex},${index})">⚡ Myo-Reps: ${isMyo ? 'On' : 'Off'}</button>
+                    </div>
+                    <div class="template-targets">
+                        <label>Target Reps
+                            <input type="text" id="template-reps-${dayIndex}-${index}" value="${UI.esc(item.targetReps || '8-12')}" onchange="UI.updateTemplateTargets(${dayIndex},${index})">
+                        </label>
+                        <label>Target RIR
+                            <input type="text" id="template-rir-${dayIndex}-${index}" value="${UI.esc(item.targetRir || '1-2')}" onchange="UI.updateTemplateTargets(${dayIndex},${index})">
+                        </label>
+                    </div>
+                </div>`;
+        }).join('');
+
+        this.container.innerHTML = `
+            <div class="card">
+                <div class="editor-title-row">
+                    <div><h2>${UI.esc(day.name)}</h2><p>These changes affect future workouts only.</p></div>
+                    <button class="mini-action" onclick="UI.renameDay(${dayIndex}, false); UI.renderWorkoutDayEditor(${dayIndex})">Rename</button>
+                </div>
+                <div class="template-exercise-list">${rows || '<p class="progress-empty">No exercises yet.</p>'}</div>
+                <button class="btn-secondary" onclick="UI.openTemplateExercisePicker(${dayIndex},-1,'add')">+ Add Exercise</button>
+            </div>
+            <button class="btn-secondary" onclick="UI.renderSettings()">← Back to Settings</button>`;
+        window.scrollTo({top:0, behavior:'auto'});
+    },
+
+    saveTemplateDay(dayIndex) {
+        const day = Store.data.workoutDays[dayIndex];
+        if (!day) return;
+        day.exercises.forEach((item,i) => {
+            item.block = String.fromCharCode(65 + i);
+            item.role = item.role || 'A';
+            item.sets = Math.max(1, Number(item.sets)||1);
+            item.targetReps = item.targetReps || '8-12';
+            item.targetRir = item.targetRir || '1-2';
+            item.mode = item.mode === 'myo' ? 'myo' : 'normal';
+        });
+        Store.save();
+    },
+
+    moveTemplateExercise(dayIndex, index, delta) {
+        const day = Store.data.workoutDays[dayIndex];
+        const next = index + delta;
+        if (!day || next < 0 || next >= day.exercises.length) return;
+        [day.exercises[index], day.exercises[next]] = [day.exercises[next], day.exercises[index]];
+        this.saveTemplateDay(dayIndex);
+        this.renderWorkoutDayEditor(dayIndex);
+    },
+
+    changeTemplateSets(dayIndex, index, delta) {
+        const item = Store.data.workoutDays[dayIndex]?.exercises[index];
+        if (!item) return;
+        item.sets = Math.max(1, (Number(item.sets)||1) + delta);
+        this.saveTemplateDay(dayIndex);
+        this.renderWorkoutDayEditor(dayIndex);
+    },
+
+    updateTemplateTargets(dayIndex, index) {
+        const item = Store.data.workoutDays[dayIndex]?.exercises[index];
+        if (!item) return;
+        const reps = document.getElementById(`template-reps-${dayIndex}-${index}`)?.value.trim();
+        const rir = document.getElementById(`template-rir-${dayIndex}-${index}`)?.value.trim();
+        if (reps) item.targetReps = reps;
+        if (rir) item.targetRir = rir;
+        this.saveTemplateDay(dayIndex);
+    },
+
+    toggleTemplateMyo(dayIndex, index) {
+        const item = Store.data.workoutDays[dayIndex]?.exercises[index];
+        if (!item) return;
+        item.mode = item.mode === 'myo' ? 'normal' : 'myo';
+        if (item.mode === 'myo' && Number(item.sets) < 5) item.sets = 5;
+        this.saveTemplateDay(dayIndex);
+        this.renderWorkoutDayEditor(dayIndex);
+    },
+
+    removeTemplateExercise(dayIndex, index) {
+        const day = Store.data.workoutDays[dayIndex];
+        if (!day) return;
+        const name = Coach.getExerciseName(day.exercises[index]?.id);
+        if (!confirm(`Remove "${name}" from future ${day.name} workouts? Historical workouts will not change.`)) return;
+        day.exercises.splice(index,1);
+        this.saveTemplateDay(dayIndex);
+        this.renderWorkoutDayEditor(dayIndex);
+    },
+
+    openTemplateExercisePicker(dayIndex, index, mode) {
+        this.templatePicker = {dayIndex, index, mode};
+        const groups = Coach.getAllExercisesGrouped();
+        let listHtml = '';
+        for (const [group, exercises] of Object.entries(groups)) {
+            if (!exercises.length) continue;
+            listHtml += `<div class="swap-header">${group}</div>` + exercises.map(ex =>
+                `<div class="swap-item" onclick="UI.selectTemplateExercise('${ex.id}')"><div><strong>${UI.esc(ex.name)}</strong><small>${ex.muscle}</small></div><span class="swap-select-btn">${mode === 'add' ? 'Add' : 'Select'}</span></div>`
+            ).join('');
+        }
+        const modal = document.getElementById('swap-modal');
+        const title = modal.querySelector('h3');
+        if (title) title.innerText = mode === 'add' ? 'Add Exercise' : 'Swap Exercise';
+        document.getElementById('swap-list-container').innerHTML = listHtml;
+        modal.classList.add('active');
+    },
+
+    selectTemplateExercise(exId) {
+        const ctx = this.templatePicker;
+        if (!ctx) return;
+        const day = Store.data.workoutDays[ctx.dayIndex];
+        if (!day) return;
+        const ex = Store.data.exercises.find(e => e.id === exId);
+        if (!ex) return;
+
+        if (ctx.mode === 'add') {
+            day.exercises.push({
+                id: exId, block:'A', role:'A', sets:3,
+                targetReps:'8-12', targetRir:'1-2', mode:'normal'
+            });
+        } else if (day.exercises[ctx.index]) {
+            day.exercises[ctx.index] = {...day.exercises[ctx.index], id:exId};
+        }
+        this.saveTemplateDay(ctx.dayIndex);
+        document.getElementById('swap-modal').classList.remove('active');
+        this.templatePicker = null;
+        this.renderWorkoutDayEditor(ctx.dayIndex);
+    },
+
+    renderHistoryMoveTool(sourceId = '', targetId = '') {
+        this.pageTitle.innerText = 'Move Exercise History';
+        const exercisesWithHistory = Store.data.exercises.filter(ex =>
+            Store.data.history.some(session => session.exercises?.some(item => item.id === ex.id))
+        );
+        const optionHtml = exercisesWithHistory.map(ex => `<option value="${ex.id}" ${ex.id === sourceId ? 'selected' : ''}>${UI.esc(ex.name)}</option>`).join('');
+        const targetOptions = Store.data.exercises.map(ex => `<option value="${ex.id}" ${ex.id === targetId ? 'selected' : ''}>${UI.esc(ex.name)}</option>`).join('');
+
+        this.historyMoveSelection = new Set();
+        this.container.innerHTML = `
+            <div class="card">
+                <h2>Move / Merge Exercise History</h2>
+                <p class="settings-help">Use this when a past workout was logged under the wrong exercise. This changes historical records only; it does not change your future workout-day templates.</p>
+                <label>Move history from</label>
+                <select id="history-move-source" onchange="UI.previewHistoryMove()">
+                    <option value="">Choose source exercise</option>${optionHtml}
+                </select>
+                <label>Move history to</label>
+                <select id="history-move-target" onchange="UI.previewHistoryMove()">
+                    <option value="">Choose destination exercise</option>${targetOptions}
+                </select>
+                <div id="history-move-preview"></div>
+            </div>
+            <button class="btn-secondary" onclick="UI.renderSettings()">← Back to Settings</button>`;
+        this.previewHistoryMove();
+    },
+
+    previewHistoryMove() {
+        const sourceId = document.getElementById('history-move-source')?.value || '';
+        const targetId = document.getElementById('history-move-target')?.value || '';
+        const preview = document.getElementById('history-move-preview');
+        if (!preview) return;
+        if (!sourceId || !targetId) {
+            preview.innerHTML = '<p class="progress-empty">Choose a source and destination to preview affected workouts.</p>';
+            return;
+        }
+        if (sourceId === targetId) {
+            preview.innerHTML = '<p class="history-move-warning">Source and destination must be different exercises.</p>';
+            return;
+        }
+
+        const matches = Store.data.history
+            .map((session,index) => ({session,index}))
+            .filter(x => x.session.exercises?.some(ex => ex.id === sourceId))
+            .sort((a,b) => new Date(b.session.date) - new Date(a.session.date));
+
+        this.historyMoveSelection = new Set(matches.map(x => x.index));
+
+        if (!matches.length) {
+            preview.innerHTML = '<p class="progress-empty">No historical workouts use the selected source exercise.</p>';
+            return;
+        }
+
+        const rows = matches.map(({session,index}) => {
+            const source = session.exercises.find(ex => ex.id === sourceId);
+            const targetAlready = session.exercises.some(ex => ex.id === targetId);
+            const sets = source?.sets?.length || 0;
+            const dayName = getWorkoutDay(session.type)?.name || session.type;
+            return `
+                <label class="history-move-session">
+                    <input type="checkbox" checked onchange="UI.toggleHistoryMoveSession(${index},this.checked)">
+                    <span><strong>${new Date(session.date).toLocaleDateString()}</strong>
+                    <small>${UI.esc(dayName)} • ${sets} set${sets===1?'':'s'}${targetAlready ? ' • will merge with existing destination exercise' : ''}</small></span>
+                </label>`;
+        }).join('');
+
+        preview.innerHTML = `
+            <div class="history-move-summary">
+                <strong>${matches.length} workout${matches.length===1?'':'s'} found</strong>
+                <div><button class="mini-action" onclick="UI.setAllHistoryMove(true)">Select All</button>
+                <button class="mini-action" onclick="UI.setAllHistoryMove(false)">Clear</button></div>
+            </div>
+            <div class="history-move-list">${rows}</div>
+            <button class="btn-primary" onclick="UI.applyHistoryMove()">Move Selected History</button>
+            <p class="progress-note">If the destination exercise already exists in a selected workout, the source sets will be appended to it and the duplicate source exercise entry will be removed.</p>`;
+    },
+
+    toggleHistoryMoveSession(index, checked) {
+        if (checked) this.historyMoveSelection.add(index);
+        else this.historyMoveSelection.delete(index);
+    },
+
+    setAllHistoryMove(checked) {
+        document.querySelectorAll('.history-move-session input[type="checkbox"]').forEach(box => {
+            box.checked = checked;
+            const label = box.closest('.history-move-session');
+            const dateText = label?.querySelector('strong')?.innerText;
+        });
+        const sourceId = document.getElementById('history-move-source')?.value || '';
+        const matches = Store.data.history
+            .map((session,index) => ({session,index}))
+            .filter(x => x.session.exercises?.some(ex => ex.id === sourceId));
+        this.historyMoveSelection = checked ? new Set(matches.map(x => x.index)) : new Set();
+    },
+
+    applyHistoryMove() {
+        const sourceId = document.getElementById('history-move-source')?.value || '';
+        const targetId = document.getElementById('history-move-target')?.value || '';
+        if (!sourceId || !targetId || sourceId === targetId) return;
+        const selected = [...this.historyMoveSelection];
+        if (!selected.length) { alert('Select at least one workout to move.'); return; }
+
+        const sourceName = Coach.getExerciseName(sourceId);
+        const targetName = Coach.getExerciseName(targetId);
+        let setCount = 0;
+        selected.forEach(index => {
+            const session = Store.data.history[index];
+            const sourceIndex = session?.exercises?.findIndex(ex => ex.id === sourceId);
+            if (sourceIndex < 0) return;
+            const source = session.exercises[sourceIndex];
+            setCount += source.sets?.length || 0;
+        });
+
+        if (!confirm(`Move ${selected.length} workout${selected.length===1?'':'s'} (${setCount} sets) from "${sourceName}" to "${targetName}"? This changes saved workout history.`)) return;
+
+        selected.forEach(index => {
+            const session = Store.data.history[index];
+            if (!session?.exercises) return;
+            const sourceIndex = session.exercises.findIndex(ex => ex.id === sourceId);
+            if (sourceIndex < 0) return;
+            const source = session.exercises[sourceIndex];
+            const targetIndex = session.exercises.findIndex(ex => ex.id === targetId);
+
+            if (targetIndex >= 0 && targetIndex !== sourceIndex) {
+                const target = session.exercises[targetIndex];
+                target.sets = [...(target.sets || []), ...(source.sets || [])];
+                session.exercises.splice(sourceIndex,1);
+            } else {
+                source.id = targetId;
+            }
+        });
+
+        // Refresh the destination exercise's future progression target from its latest saved workout.
+        const latestTargetSession = Store.data.history
+            .filter(session => session.exercises?.some(ex => ex.id === targetId))
+            .sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+        if (latestTargetSession) {
+            const latestTargetExercise = latestTargetSession.exercises.find(ex => ex.id === targetId);
+            if (latestTargetExercise) Coach.updateProgression({exercises:[latestTargetExercise]});
+        }
+
+        Store.save();
+        alert(`Moved ${selected.length} workout${selected.length===1?'':'s'} to ${targetName}.`);
+        this.renderHistoryMoveTool(sourceId, targetId);
+    },
+
     renderHistoryManager() { this.pageTitle.innerText = 'History Manager'; const recent = Store.data.history.map((h, i) => ({...h, origIndex: i})).reverse().slice(0, 3); if (recent.length === 0) { this.container.innerHTML = '<div class="card"><p>No history found.</p><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back</button></div>'; return; } const html = recent.map(item => `<div class="history-item"><div class="history-info"><strong>${new Date(item.date).toLocaleDateString()}</strong><span style="font-size:0.8rem; color:#666;">${item.type.toUpperCase()} • ${item.exercises.length} Exercises</span></div><div class="history-actions"><button class="btn-sm" onclick="UI.editWorkout(${item.origIndex})">Edit Workout</button><button class="btn-sm btn-danger" onclick="UI.deleteHistory(${item.origIndex})">Delete</button></div></div>`).join(''); this.container.innerHTML = `<div style="margin-bottom:20px;">${html}</div><button class="btn-secondary" onclick="UI.nav(\'settings\')">Back to Settings</button>`; },
     deleteHistory(index) { if(confirm("Are you sure?")) { Store.deleteSession(index); this.renderHistoryManager(); }},
     editWorkout(index) { const s = Store.data.history[index]; this.editingHistoryIndex = index; this.currentPlan = s.exercises; this.currentType = s.type; this.renderActiveSession(true); },
@@ -1122,8 +1437,11 @@ const UI = {
                 `<div class="swap-item" onclick="UI.selectAddedExercise('${ex.id}')"><div><strong>${UI.esc(ex.name)}</strong></div><span class="swap-select-btn">Add</span></div>`
             ).join('');
         }
+        const modal = document.getElementById('swap-modal');
+        const title = modal.querySelector('h3');
+        if (title) title.innerText = 'Add Exercise';
         document.getElementById('swap-list-container').innerHTML = listHtml;
-        document.getElementById('swap-modal').classList.add('active');
+        modal.classList.add('active');
     },
 
     selectAddedExercise(exId) {
