@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v40.3';
+const APP_VERSION = 'v40.4';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -340,43 +340,39 @@ Coach.getChartData = function(exId) {
         .slice(-12);
 };
 
-Coach.estimate1RM = function(weight, reps) {
-    const w = Number(weight);
-    const r = Number(reps);
-    if (!(w > 0) || !(r > 0)) return null;
-    // Epley estimate. Reps are capped at 30 to avoid extreme high-rep extrapolation.
-    const cappedReps = Math.min(r, 30);
-    return w * (1 + cappedReps / 30);
+Coach.getProgressCutoff = function(months) {
+    const cutoff = new Date();
+    cutoff.setHours(0,0,0,0);
+    cutoff.setMonth(cutoff.getMonth() - months);
+    return cutoff;
 };
 
-Coach.getStrengthSeries = function(exId) {
+Coach.getStrengthSeries = function(exId, months = 1) {
+    const cutoff = Coach.getProgressCutoff(months);
     return Store.data.history
+        .filter(session => new Date(session.date) >= cutoff)
         .map(session => {
             const ex = Array.isArray(session.exercises) ? session.exercises.find(e => e.id === exId) : null;
             if (!ex || !Array.isArray(ex.sets)) return null;
-            let estimates;
-            if (ex.mode === 'myo' && ex.sets[1]) {
-                const activationEstimate = Coach.estimate1RM(ex.sets[1].weight, ex.sets[1].reps);
-                estimates = Number.isFinite(activationEstimate) ? [activationEstimate] : [];
-            } else {
-                estimates = ex.sets
-                    .map(s => Coach.estimate1RM(s.weight, s.reps))
-                    .filter(v => Number.isFinite(v));
-            }
-            if (!estimates.length) return null;
+
+            // Only count weight from sets where reps were actually logged.
+            // This prevents an unused/default workout weight from becoming progress data.
+            const performedSets = ex.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
+            if (!performedSets.length) return null;
+
             return {
                 date: session.date,
-                value: Math.max(...estimates)
+                value: Math.max(...performedSets.map(s => Number(s.weight)))
             };
         })
         .filter(Boolean)
         .sort((a,b) => new Date(a.date) - new Date(b.date));
 };
 
-Coach.getExerciseProgress = function() {
+Coach.getExerciseProgress = function(months = 1) {
     return Store.data.exercises
         .map(ex => {
-            const series = Coach.getStrengthSeries(ex.id);
+            const series = Coach.getStrengthSeries(ex.id, months);
             if (series.length < 2) return null;
             const first = series[0].value;
             const latest = series[series.length - 1].value;
@@ -395,7 +391,7 @@ Coach.getExerciseProgress = function() {
         .filter(Boolean);
 };
 
-Coach.getMuscleGroupProgress = function() {
+Coach.getMuscleGroupProgress = function(months = 1) {
     const groupFor = muscle => {
         if (muscle === 'chest') return 'Chest';
         if (muscle === 'back') return 'Back';
@@ -405,7 +401,7 @@ Coach.getMuscleGroupProgress = function() {
         return 'Core';
     };
     const buckets = {};
-    Coach.getExerciseProgress().forEach(item => {
+    Coach.getExerciseProgress(months).forEach(item => {
         const group = groupFor(item.muscle);
         if (!buckets[group]) buckets[group] = [];
         buckets[group].push(item.pct);
@@ -441,7 +437,7 @@ Coach.generateWorkout = function(dayType) {
 };
 
 const UI = {
-    timerInterval: null, editingHistoryIndex: null, pendingWorkoutType: null,
+    timerInterval: null, editingHistoryIndex: null, pendingWorkoutType: null, progressMonths: 1,
 
     init() {
         this.container = document.getElementById('main-container');
@@ -734,32 +730,37 @@ const UI = {
     renderProgress(selectedExerciseId = null, target = this.container, standalone = true) {
         if (standalone) this.pageTitle.innerText = 'Progress';
 
-        const exerciseProgress = Coach.getExerciseProgress()
+        const months = this.progressMonths === 2 ? 2 : 1;
+        const exerciseProgress = Coach.getExerciseProgress(months)
             .sort((a,b) => b.pct - a.pct);
-        const muscleProgress = Coach.getMuscleGroupProgress();
+        const muscleProgress = Coach.getMuscleGroupProgress(months);
+
+        const toggleHtml = `
+            <div class="progress-range-toggle" role="group" aria-label="Progress time range">
+                <button class="${months === 1 ? 'active' : ''}" onclick="UI.setProgressRange(1)">Past Month</button>
+                <button class="${months === 2 ? 'active' : ''}" onclick="UI.setProgressRange(2)">Past 2 Months</button>
+            </div>`;
 
         if (exerciseProgress.length === 0) {
             target.innerHTML = `
+                ${toggleHtml}
                 <div class="card">
                     <h2>Strength Progress</h2>
-                    <p class="progress-empty">Complete the same weighted exercise in at least two saved workouts to start seeing progress here.</p>
+                    <p class="progress-empty">You need at least two completed workouts for the same weighted exercise within this time period to calculate progress.</p>
                 </div>
                 <div class="card">
                     <h2>Muscle Group Progress</h2>
-                    <p class="progress-note">This view uses changes in logged exercise strength. It does not measure muscle size.</p>
+                    <p class="progress-note">This view uses changes in your actual logged working weights. It does not measure muscle size.</p>
                 </div>`;
             return;
         }
 
-        const selected = exerciseProgress.find(e => e.id === selectedExerciseId)
-            || exerciseProgress[0];
-
+        const selected = exerciseProgress.find(e => e.id === selectedExerciseId) || exerciseProgress[0];
         const overallValues = exerciseProgress.map(e => e.pct).sort((a,b) => a-b);
         const overallMid = Math.floor(overallValues.length / 2);
         const overallPct = overallValues.length % 2
             ? overallValues[overallMid]
             : (overallValues[overallMid-1] + overallValues[overallMid]) / 2;
-
         const best = exerciseProgress[0];
 
         const muscleMax = Math.max(1, ...muscleProgress.map(m => Math.abs(m.pct)));
@@ -785,9 +786,10 @@ const UI = {
         ).join('');
 
         target.innerHTML = `
+            ${toggleHtml}
             <div class="progress-summary-grid">
                 <div class="progress-stat-card">
-                    <span>Typical Strength Change</span>
+                    <span>Typical Weight Change</span>
                     <strong class="${overallPct >= 0 ? 'positive' : 'negative'}">${overallPct > 0 ? '+' : ''}${overallPct.toFixed(1)}%</strong>
                     <small>Median across tracked exercises</small>
                 </div>
@@ -802,7 +804,7 @@ const UI = {
                 <div class="progress-section-head">
                     <div>
                         <h2>Strength Progress</h2>
-                        <p>Estimated strength from your logged weight and reps.</p>
+                        <p>Actual working weight from completed sets. No estimated 1RM.</p>
                     </div>
                 </div>
                 <label class="progress-select-label" for="progress-exercise-select">Exercise</label>
@@ -816,19 +818,25 @@ const UI = {
                 <div class="progress-section-head">
                     <div>
                         <h2>Muscle Group Progress</h2>
-                        <p>Median strength change across exercises in each group.</p>
+                        <p>Median working-weight change across exercises in each group.</p>
                     </div>
                 </div>
                 <div class="muscle-progress-list">${muscleHtml || '<p class="progress-empty">More repeated exercise data is needed.</p>'}</div>
-                <p class="progress-note">Muscle Group Progress reflects training-strength changes in the exercises assigned to each muscle group. It is not a measurement of muscle size or hypertrophy.</p>
+                <p class="progress-note">Muscle Group Progress reflects changes in actual logged working weight for completed sets. It is not a measurement of muscle size or hypertrophy.</p>
             </div>
 
             <div class="progress-method">
-                Strength is estimated from your best logged set in each workout using the Epley estimated 1RM formula. High-rep sets are capped at 30 reps for the estimate.
+                Progress compares the earliest completed working weight with the latest completed working weight inside the selected time period. Sets with zero reps are excluded.
             </div>
         `;
 
         this.renderStrengthProgressDetail(selected.id);
+    },
+
+    setProgressRange(months) {
+        this.progressMonths = months === 2 ? 2 : 1;
+        const target = document.getElementById('home-progress') || this.container;
+        this.renderProgress(null, target, target === this.container);
     },
 
     updateProgressExercise(exId) {
@@ -838,9 +846,9 @@ const UI = {
     renderStrengthProgressDetail(exId) {
         const detail = document.getElementById('strength-progress-detail');
         if (!detail) return;
-        const item = Coach.getExerciseProgress().find(e => e.id === exId);
+        const item = Coach.getExerciseProgress(this.progressMonths).find(e => e.id === exId);
         if (!item) {
-            detail.innerHTML = '<p class="progress-empty">Not enough data for this exercise.</p>';
+            detail.innerHTML = '<p class="progress-empty">Not enough data for this exercise in this time period.</p>';
             return;
         }
 
@@ -849,7 +857,7 @@ const UI = {
         const values = series.map(d => d.value);
         let min = Math.min(...values);
         let max = Math.max(...values);
-        if (min === max) { min *= 0.95; max *= 1.05; }
+        if (min === max) { min = Math.max(0, min - 5); max += 5; }
         const range = Math.max(1, max - min);
         const xFor = i => series.length === 1 ? w / 2 : padX + (i / (series.length - 1)) * (w - padX * 2);
         const yFor = v => h - padY - ((v - min) / range) * (h - padY * 2);
@@ -877,7 +885,7 @@ const UI = {
                 </div>
             </div>
             <div class="progress-chart-wrap">
-                <svg class="progress-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Estimated strength trend">
+                <svg class="progress-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Working weight trend">
                     <line x1="${padX}" y1="${h-padY}" x2="${w-padX}" y2="${h-padY}" class="progress-chart-axis"></line>
                     <polyline points="${points}" class="progress-chart-line"></polyline>
                     ${dots}
