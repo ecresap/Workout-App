@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.1';
+const APP_VERSION = 'v41.2';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -581,7 +581,12 @@ const UI = {
         const exercisesHtml = this.currentPlan.map((ex, i) => {
             const setCount = Array.isArray(ex.sets) ? ex.sets.length : Math.max(1, Number(ex.sets) || 1);
             let weightVal = ex._live?.weight ?? ex.targetWeight;
-            if (isHistoryEdit) { if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight; } else if (dataMap[`weight-${i}`]) { weightVal = dataMap[`weight-${i}`]; }
+            if (isHistoryEdit) {
+                if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight;
+            } else if (Object.prototype.hasOwnProperty.call(dataMap, `weight-${i}`)) {
+                // On resume, the newest saved draft input must override any older _live snapshot.
+                weightVal = dataMap[`weight-${i}`];
+            }
             
             const isMyo = ex.mode === 'myo';
             
@@ -595,7 +600,10 @@ const UI = {
                 const labels = Array.from({length: setCount}, (_,idx) => baseLabels[idx] || `Mini ${idx-1}`);
                 setRows = labels.map((label, sIdx) => {
                     const s = sIdx + 1;
-                    let repVal = ex._live?.sets?.[s-1]?.reps ?? dataMap[`reps-${i}-${s}`] ?? '';
+                    const repKey = `reps-${i}-${s}`;
+                    let repVal = Object.prototype.hasOwnProperty.call(dataMap, repKey)
+                        ? dataMap[repKey]
+                        : (ex._live?.sets?.[s-1]?.reps ?? '');
                     if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) repVal = setObj.reps; }
                     
                     return `<div class="myo-set-row">
@@ -609,8 +617,14 @@ const UI = {
                 setRows = Array.from({length: setCount}, (_, k) => k + 1).map(s => {
                     let repVal = '', rirVal = 2;
                     if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else {
-                        repVal = ex._live?.sets?.[s-1]?.reps ?? dataMap[`reps-${i}-${s}`] ?? '';
-                        rirVal = ex._live?.sets?.[s-1]?.rir ?? (dataMap[`rir-${i}-${s}`] !== undefined ? dataMap[`rir-${i}-${s}`] : 2);
+                        const repKey = `reps-${i}-${s}`;
+                        const rirKey = `rir-${i}-${s}`;
+                        repVal = Object.prototype.hasOwnProperty.call(dataMap, repKey)
+                            ? dataMap[repKey]
+                            : (ex._live?.sets?.[s-1]?.reps ?? '');
+                        rirVal = Object.prototype.hasOwnProperty.call(dataMap, rirKey)
+                            ? dataMap[rirKey]
+                            : (ex._live?.sets?.[s-1]?.rir ?? 2);
                     }
                     
                     return `<div class="set-row">
