@@ -461,8 +461,8 @@ const UI = {
         this.navBtns = document.querySelectorAll('.nav-btn');
         this.pageTitle = document.getElementById('page-title');
         
-        const oldTimer = document.getElementById('timer-overlay'); const oldModal = document.getElementById('readiness-modal'); const oldSwap = document.getElementById('swap-modal'); const oldSummary = document.getElementById('summary-modal');
-        if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove(); if(oldSwap) oldSwap.remove(); if(oldSummary) oldSummary.remove();
+        const oldTimer = document.getElementById('timer-overlay'); const oldModal = document.getElementById('readiness-modal'); const oldSwap = document.getElementById('swap-modal'); const oldSummary = document.getElementById('summary-modal'); const oldNote = document.getElementById('note-modal');
+        if(oldTimer) oldTimer.remove(); if(oldModal) oldModal.remove(); if(oldSwap) oldSwap.remove(); if(oldSummary) oldSummary.remove(); if(oldNote) oldNote.remove();
 
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
