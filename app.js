@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.2';
+const APP_VERSION = 'v41.3';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -61,21 +61,21 @@ const DEFAULT_EXERCISES = [
 // --- 2. THE 3-DAY BLOCK PLAN ---
 const WORKOUT_PLANS = {
     day1: [
-        { id: 'bench_press', block: 'A', role: 'A', sets: 3, targetReps: '5-8', targetRir: '1-2', mode: 'normal', note: 'Keep shoulder blades stable; lower weight without shoulder discomfort.' },
-        { id: 'inc_db_press', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal', note: 'Keep shoulder blades stable; lower weight without shoulder discomfort.' },
-        { id: 'cable_fly', block: 'C', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal', note: 'Bring upper arms together rather than forcing hands to touch.' },
+        { id: 'bench_press', block: 'A', role: 'A', sets: 3, targetReps: '5-8', targetRir: '1-2', mode: 'normal' },
+        { id: 'inc_db_press', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
+        { id: 'cable_fly', block: 'C', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal' },
         { id: 'lat_raise', block: 'D', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal' },
         { id: 'tricep_pressdown', block: 'E', role: 'A', sets: 3, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
         { id: 'leg_press', block: 'F', role: 'A', sets: 2, targetReps: '8-12', targetRir: '1-3', mode: 'normal' }
     ],
     day2: [
-        { id: 'lat_pulldown', block: 'A', role: 'A', sets: 3, targetReps: '6-10', targetRir: '1-2', mode: 'normal', note: 'Pull elbows toward sides without leaning excessively backward.' },
-        { id: 'chest_supp_row', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal', note: 'Allow shoulder blades to move naturally; keep torso controlled.' },
-        { id: 'one_arm_row', block: 'C', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal', note: 'Allow shoulder blades to move naturally; keep torso controlled.' },
+        { id: 'lat_pulldown', block: 'A', role: 'A', sets: 3, targetReps: '6-10', targetRir: '1-2', mode: 'normal' },
+        { id: 'chest_supp_row', block: 'B', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
+        { id: 'one_arm_row', block: 'C', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
         { id: 'rev_fly', block: 'D', role: 'A', sets: 2, targetReps: '12-20', targetRir: '1-2', mode: 'normal' },
         { id: 'bicep_curl', block: 'E', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
         { id: 'hammer_curl', block: 'F', role: 'A', sets: 2, targetReps: '10-15', targetRir: '1-2', mode: 'normal' },
-        { id: 'rdl', block: 'G', role: 'A', sets: 2, targetReps: '6-10', targetRir: '2-3', mode: 'normal', note: 'Push hips back. Stop at strong hamstring stretch; don\'t round lower back.' }
+        { id: 'rdl', block: 'G', role: 'A', sets: 2, targetReps: '6-10', targetRir: '2-3', mode: 'normal' }
     ],
     day3: [
         { id: 'inc_mach_press', block: 'A', role: 'A', sets: 3, targetReps: '8-12', targetRir: '1-2', mode: 'normal' },
@@ -151,7 +151,15 @@ const Store = {
             }));
         }
 
-        // Normalize the new editable-plan fields without modifying historical sessions.
+        // Normalize editable-plan fields without modifying historical sessions.
+        // Remove only legacy built-in coaching tips; user-created notes are preserved.
+        const legacyTips = new Set([
+            'Keep shoulder blades stable; lower weight without shoulder discomfort.',
+            'Bring upper arms together rather than forcing hands to touch.',
+            'Pull elbows toward sides without leaning excessively backward.',
+            'Allow shoulder blades to move naturally; keep torso controlled.',
+            "Push hips back. Stop at strong hamstring stretch; don't round lower back."
+        ]);
         this.data.workoutDays.forEach((day, dIdx) => {
             if (!day.id) day.id = `day_custom_${dIdx + 1}`;
             if (!day.name) day.name = `Day ${dIdx + 1}`;
@@ -164,6 +172,7 @@ const Store = {
                 if (!ex.targetReps) ex.targetReps = '8-12';
                 if (!ex.targetRir) ex.targetRir = '1-2';
                 if (ex.mode !== 'myo') ex.mode = 'normal';
+                if (legacyTips.has(ex.note)) delete ex.note;
             });
         });
 
@@ -457,10 +466,11 @@ const UI = {
 
         const timerHtml = `<div id="timer-overlay"><span id="timer-val">00:00</span> <div class="timer-close" onclick="UI.stopTimer()">X</div></div>`;
         const summaryHtml = `<div id="summary-modal" class="modal-overlay"><div class="modal-content"><div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 id="summary-title" style="margin:0;">Workout</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('summary-modal').classList.remove('active')">X</div></div><div id="summary-list" class="session-summary-list"></div></div></div>`;
+        const noteHtml = `<div id="note-modal" class="modal-overlay"><div class="modal-content note-modal-content"><div class="note-modal-head"><h3 id="note-modal-title">Exercise Note</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="UI.closeExerciseNote()">X</div></div><textarea id="exercise-note-input" rows="5" maxlength="500" placeholder="Add a note for future workouts..."></textarea><div class="note-modal-actions"><button class="btn-primary" onclick="UI.saveExerciseNote()">Save Note</button><button id="exercise-note-delete" class="btn-secondary note-delete-btn" onclick="UI.deleteExerciseNote()">Delete Note</button></div></div></div>`;
         const swapHtml = `<div id="swap-modal" class="modal-overlay"><div class="modal-content" style="text-align:left; padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:80vh;"><div style="padding:15px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0; font-size:1.1rem;">Swap Exercise</h3><div class="timer-close" style="background:#eee; color:#333;" onclick="document.getElementById('swap-modal').classList.remove('active')">X</div></div><div id="swap-list-container" class="swap-list" style="overflow-y:auto;"></div></div></div>`;
         const footerHtml = `<div class="version-footer">StrengthOS ${APP_VERSION}</div>`;
         
-        document.body.insertAdjacentHTML('beforeend', timerHtml + summaryHtml + swapHtml + footerHtml);
+        document.body.insertAdjacentHTML('beforeend', timerHtml + summaryHtml + noteHtml + swapHtml + footerHtml);
 
         this.navBtns.forEach(b => b.addEventListener('click', () => this.nav(b.dataset.target)));
         this.nav('dashboard');
@@ -646,8 +656,11 @@ const UI = {
                     <button class="mini-action" onclick="UI.swapExercise(${i})" title="Replace">↔</button>
                     <button class="mini-action danger" onclick="UI.removeExercise(${i})" title="Remove">×</button>
                 </div>` : ''}
-                ${ex.note ? `<div class="toast">${ex.note}</div>` : ''}
-                <h3 style="margin-bottom:8px;">${badges} ${ex.name} ${ex.isBonus ? '<small style="color:#888; font-weight:normal;">(Optional)</small>' : ''}</h3>
+                <div class="exercise-title-row">
+                    <h3>${badges}<span class="exercise-title-text">${UI.esc(ex.name)}</span>${ex.isBonus ? '<small class="exercise-optional">(Optional)</small>' : ''}</h3>
+                    ${!isHistoryEdit ? `<button class="exercise-note-button" onclick="UI.openExerciseNote(${i})">${ex.note ? 'Note' : 'Add Note'}</button>` : ''}
+                </div>
+                ${ex.note ? `<button class="exercise-note-text" onclick="UI.openExerciseNote(${i})">${UI.esc(ex.note)}</button>` : ''}
                 <div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div>
                 <div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div>
                 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:15px; font-weight:600;">Target: ${ex.targetReps} reps (Aim for ${ex.targetRir || '1-3'} RIR)</p>
@@ -680,6 +693,49 @@ const UI = {
         }
     },
 
+    openExerciseNote(index) {
+        if (!this.currentPlan?.[index]) return;
+        this.noteExerciseIndex = index;
+        const ex = this.currentPlan[index];
+        const input = document.getElementById('exercise-note-input');
+        const title = document.getElementById('note-modal-title');
+        const deleteBtn = document.getElementById('exercise-note-delete');
+        if (title) title.innerText = ex.name || 'Exercise Note';
+        if (input) input.value = ex.note || '';
+        if (deleteBtn) deleteBtn.style.display = ex.note ? 'block' : 'none';
+        document.getElementById('note-modal')?.classList.add('active');
+        setTimeout(() => input?.focus(), 0);
+    },
+
+    closeExerciseNote() {
+        document.getElementById('note-modal')?.classList.remove('active');
+        this.noteExerciseIndex = null;
+    },
+
+    saveExerciseNote() {
+        const index = this.noteExerciseIndex;
+        if (!Number.isInteger(index) || !this.currentPlan?.[index]) return;
+        this.captureLiveInputs();
+        const value = document.getElementById('exercise-note-input')?.value.trim() || '';
+        if (value) this.currentPlan[index].note = value;
+        else delete this.currentPlan[index].note;
+        this.persistCurrentPlan();
+        this.scrapeAndSaveDraft();
+        this.closeExerciseNote();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+    },
+
+    deleteExerciseNote() {
+        const index = this.noteExerciseIndex;
+        if (!Number.isInteger(index) || !this.currentPlan?.[index]) return;
+        this.captureLiveInputs();
+        delete this.currentPlan[index].note;
+        this.persistCurrentPlan();
+        this.scrapeAndSaveDraft();
+        this.closeExerciseNote();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+    },
+
     swapExercise(index) { 
         this.scrapeAndSaveDraft(); 
         const oldEx = this.currentPlan[index]; 
@@ -708,7 +764,7 @@ const UI = {
             ...newEx,
             block: oldEx.block, role: oldEx.role, sets: oldEx.sets,
             targetReps: oldEx.targetReps, targetRir: oldEx.targetRir,
-            mode: oldEx.mode || 'normal', targetWeight: prog.weight, note: oldEx.note
+            mode: oldEx.mode || 'normal', targetWeight: prog.weight
         };
         const day = getWorkoutDay(this.currentType);
         if (day && day.exercises[index]) {
@@ -718,7 +774,8 @@ const UI = {
                 sets: oldEx.sets,
                 targetReps: oldEx.targetReps,
                 targetRir: oldEx.targetRir,
-                mode: oldEx.mode || 'normal'
+                mode: oldEx.mode || 'normal',
+                note: undefined
             };
             Store.save();
         }
