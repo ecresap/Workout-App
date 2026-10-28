@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.3';
+const APP_VERSION = 'v41.4';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -38,6 +38,7 @@ const DEFAULT_EXERCISES = [
     { id: 'db_pullover', name: 'Dumbbell Pullover', muscle: 'back' },
     { id: 'db_bent_row', name: 'Dumbbell Bent-Over Row', muscle: 'back' },
     { id: 'db_rear_delt_row', name: 'Dumbbell Rear-Delt Row', muscle: 'back' },
+    { id: 'spartan_rotations', name: 'Spartan Rotations', muscle: 'back' },
     { id: 'db_shoulder_press', name: 'Dumbbell Shoulder Press', muscle: 'shoulders' },
     { id: 'arnold_press', name: 'Arnold Press', muscle: 'shoulders' },
     { id: 'db_front_raise', name: 'Dumbbell Front Raise', muscle: 'shoulders' },
@@ -580,6 +581,7 @@ const UI = {
     renderActiveSession(isResumeOrEdit, options = {}) {
         const isHistoryEdit = this.editingHistoryIndex !== null;
         const preserveScroll = options.preserveScroll === true;
+        const preferLive = options.preferLive === true;
         const previousScrollY = preserveScroll ? window.scrollY : 0;
         const anchorIndex = preserveScroll && Number.isInteger(options.anchorIndex) ? options.anchorIndex : null;
         const anchorBefore = anchorIndex !== null ? document.getElementById(`card-${anchorIndex}`) : null;
@@ -593,8 +595,9 @@ const UI = {
             let weightVal = ex._live?.weight ?? ex.targetWeight;
             if (isHistoryEdit) {
                 if (ex.sets && ex.sets[0]) weightVal = ex.sets[0].weight;
-            } else if (Object.prototype.hasOwnProperty.call(dataMap, `weight-${i}`)) {
-                // On resume, the newest saved draft input must override any older _live snapshot.
+            } else if (!preferLive && Object.prototype.hasOwnProperty.call(dataMap, `weight-${i}`)) {
+                // On a normal resume, the newest saved draft input wins.
+                // After a structural edit, captured _live values stay attached to their exercise.
                 weightVal = dataMap[`weight-${i}`];
             }
             
@@ -611,9 +614,9 @@ const UI = {
                 setRows = labels.map((label, sIdx) => {
                     const s = sIdx + 1;
                     const repKey = `reps-${i}-${s}`;
-                    let repVal = Object.prototype.hasOwnProperty.call(dataMap, repKey)
+                    let repVal = (!preferLive && Object.prototype.hasOwnProperty.call(dataMap, repKey))
                         ? dataMap[repKey]
-                        : (ex._live?.sets?.[s-1]?.reps ?? '');
+                        : (ex._live?.sets?.[s-1]?.reps ?? (dataMap[repKey] ?? ''));
                     if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) repVal = setObj.reps; }
                     
                     return `<div class="myo-set-row">
@@ -629,12 +632,12 @@ const UI = {
                     if (isHistoryEdit) { const setObj = ex.sets[s-1]; if (setObj) { repVal = setObj.reps; rirVal = setObj.rir; } } else {
                         const repKey = `reps-${i}-${s}`;
                         const rirKey = `rir-${i}-${s}`;
-                        repVal = Object.prototype.hasOwnProperty.call(dataMap, repKey)
+                        repVal = (!preferLive && Object.prototype.hasOwnProperty.call(dataMap, repKey))
                             ? dataMap[repKey]
-                            : (ex._live?.sets?.[s-1]?.reps ?? '');
-                        rirVal = Object.prototype.hasOwnProperty.call(dataMap, rirKey)
+                            : (ex._live?.sets?.[s-1]?.reps ?? (dataMap[repKey] ?? ''));
+                        rirVal = (!preferLive && Object.prototype.hasOwnProperty.call(dataMap, rirKey))
                             ? dataMap[rirKey]
-                            : (ex._live?.sets?.[s-1]?.rir ?? 2);
+                            : (ex._live?.sets?.[s-1]?.rir ?? (dataMap[rirKey] !== undefined ? dataMap[rirKey] : 2));
                     }
                     
                     return `<div class="set-row">
@@ -663,7 +666,12 @@ const UI = {
                 ${ex.note ? `<button class="exercise-note-text" onclick="UI.openExerciseNote(${i})">${UI.esc(ex.note)}</button>` : ''}
                 <div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div>
                 <div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:15px; font-weight:600;">Target: ${ex.targetReps} reps (Aim for ${ex.targetRir || '1-3'} RIR)</p>
+                <div class="workout-target-row">
+                    <label>Rep Range
+                        <input type="text" value="${UI.esc(ex.targetReps || '8-12')}" onchange="UI.updateWorkoutRepRange(${i}, this.value)">
+                    </label>
+                    <span>Aim for ${UI.esc(ex.targetRir || '1-3')} RIR</span>
+                </div>
                 ${!isHistoryEdit ? `<div class="workout-edit-row">
                     <button class="mini-action" onclick="UI.removeSet(${i})">− Set</button>
                     <button class="mini-action" onclick="UI.addSet(${i})">+ Set</button>
@@ -720,9 +728,9 @@ const UI = {
         if (value) this.currentPlan[index].note = value;
         else delete this.currentPlan[index].note;
         this.persistCurrentPlan();
-        this.scrapeAndSaveDraft();
+        this.saveDraftFromLive();
         this.closeExerciseNote();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     deleteExerciseNote() {
@@ -731,9 +739,9 @@ const UI = {
         this.captureLiveInputs();
         delete this.currentPlan[index].note;
         this.persistCurrentPlan();
-        this.scrapeAndSaveDraft();
+        this.saveDraftFromLive();
         this.closeExerciseNote();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     swapExercise(index) { 
@@ -779,14 +787,40 @@ const UI = {
             };
             Store.save();
         }
-        this.scrapeAndSaveDraft();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     setRir(exIdx, setNum, val) { document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`).forEach(b => b.classList.remove('selected')); document.querySelectorAll(`#rir-box-${exIdx}-${setNum} .rir-btn`)[val].classList.add('selected'); document.getElementById(`rir-${exIdx}-${setNum}`).value = val; if (this.editingHistoryIndex === null) { this.scrapeAndSaveDraft(); this.startTimer(Store.data.profile.timerDuration); } },
     startTimer(seconds) { const overlay = document.getElementById('timer-overlay'); const display = document.getElementById('timer-val'); overlay.classList.add('active'); if (this.timerInterval) clearInterval(this.timerInterval); let rem = seconds; const tick = () => { const m = Math.floor(rem / 60).toString().padStart(2,'0'); const s = (rem % 60).toString().padStart(2,'0'); display.innerText = `${m}:${s}`; if (rem <= 0) { clearInterval(this.timerInterval); display.innerText = "Ready!"; if (navigator.vibrate) navigator.vibrate([200, 100, 200]); if (Notification.permission === "granted") new Notification("🔔 Rest Finished!"); } rem--; }; tick(); this.timerInterval = setInterval(tick, 1000); },
     stopTimer() { clearInterval(this.timerInterval); document.getElementById('timer-overlay').classList.remove('active'); },
     scrapeAndSaveDraft() { const inputs = {}; document.querySelectorAll('input').forEach(inp => { if (inp.id) inputs[inp.id] = inp.value; }); Store.saveDraft({ startTime: this.currentStartTime, plan: this.currentPlan, type: this.currentType, inputs: inputs }); },
+
+    saveDraftFromLive() {
+        const inputs = {};
+        (this.currentPlan || []).forEach((ex,i) => {
+            const live = ex._live;
+            if (!live) return;
+            inputs[`weight-${i}`] = live.weight ?? '';
+            const setCount = Array.isArray(ex.sets) ? ex.sets.length : Math.max(1, Number(ex.sets)||1);
+            for (let s=1; s<=setCount; s++) {
+                inputs[`reps-${i}-${s}`] = live.sets?.[s-1]?.reps ?? '';
+                inputs[`rir-${i}-${s}`] = live.sets?.[s-1]?.rir ?? 0;
+            }
+        });
+        Store.saveDraft({ startTime:this.currentStartTime, plan:this.currentPlan, type:this.currentType, inputs });
+    },
+
+    updateWorkoutRepRange(index, value) {
+        const ex = this.currentPlan?.[index];
+        if (!ex) return;
+        this.captureLiveInputs();
+        const clean = String(value || '').trim();
+        ex.targetReps = clean || '8-12';
+        this.persistCurrentPlan();
+        this.saveDraftFromLive();
+    },
+
     pauseSession() { this.scrapeAndSaveDraft(); this.nav('workout'); },
     finishSession() {
         if(!confirm("Finish and save workout?")) return;
@@ -1456,7 +1490,8 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets = Math.max(1, Number(this.currentPlan[index].sets)||1) + 1;
         this.persistCurrentPlan();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     removeSet(index) {
@@ -1465,7 +1500,8 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan[index].sets -= 1;
         this.persistCurrentPlan();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     toggleMyo(index) {
@@ -1475,7 +1511,8 @@ const UI = {
         ex.mode = ex.mode === 'myo' ? 'normal' : 'myo';
         if (ex.mode === 'myo' && Number(ex.sets) < 5) ex.sets = 5;
         this.persistCurrentPlan();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: index, preferLive: true });
     },
 
     moveExercise(index, delta) {
@@ -1486,7 +1523,8 @@ const UI = {
         [this.currentPlan[index], this.currentPlan[next]] = [this.currentPlan[next], this.currentPlan[index]];
         this.currentPlan.forEach((ex,i) => ex.block = String.fromCharCode(65+i));
         this.persistCurrentPlan();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: next });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: next, preferLive: true });
     },
 
     removeExercise(index) {
@@ -1495,7 +1533,8 @@ const UI = {
         this.scrapeAndSaveDraft();
         this.currentPlan.splice(index,1);
         this.persistCurrentPlan();
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: Math.min(index, this.currentPlan.length - 1) });
+        this.saveDraftFromLive();
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: Math.min(index, this.currentPlan.length - 1), preferLive: true });
     },
 
     addExerciseToWorkout() {
@@ -1526,9 +1565,9 @@ const UI = {
         });
         document.getElementById('swap-modal').classList.remove('active');
         this.persistCurrentPlan();
-        this.scrapeAndSaveDraft();
+        this.saveDraftFromLive();
         const newIndex = this.currentPlan.length - 1;
-        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: newIndex });
+        this.renderActiveSession(true, { preserveScroll: true, anchorIndex: newIndex, preferLive: true });
     },
 
     renameExercise(exId) {
