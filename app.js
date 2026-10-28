@@ -666,12 +666,12 @@ const UI = {
                 ${ex.note ? `<button class="exercise-note-text" onclick="UI.openExerciseNote(${i})">${UI.esc(ex.note)}</button>` : ''}
                 <div class="history-text">${!isHistoryEdit ? Coach.getHistoryString(ex.id) : ''}</div>
                 <div class="weight-input-group"><label>Working Weight:</label><input type="number" id="weight-${i}" value="${weightVal}" ${!isHistoryEdit ? 'onchange="UI.scrapeAndSaveDraft()"' : ''}><span>lbs</span></div>
-                <div class="workout-target-row">
+                ${!isHistoryEdit ? `<div class="workout-target-row">
                     <label>Rep Range
                         <input type="text" value="${UI.esc(ex.targetReps || '8-12')}" onchange="UI.updateWorkoutRepRange(${i}, this.value)">
                     </label>
                     <span>Aim for ${UI.esc(ex.targetRir || '1-3')} RIR</span>
-                </div>
+                </div>` : `<p class="history-target-text">Target: ${UI.esc(ex.targetReps || '8-12')} reps (Aim for ${UI.esc(ex.targetRir || '1-3')} RIR)</p>`}
                 ${!isHistoryEdit ? `<div class="workout-edit-row">
                     <button class="mini-action" onclick="UI.removeSet(${i})">− Set</button>
                     <button class="mini-action" onclick="UI.addSet(${i})">+ Set</button>
