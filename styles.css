@@ -833,3 +833,22 @@ input, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px soli
         font-size:.82rem;
     }
 }
+
+
+/* v41.5 history RIR colors */
+.history-rep-green {
+    color:#15803d;
+    font-weight:800;
+}
+.history-rep-yellow {
+    color:#ca8a04;
+    font-weight:800;
+}
+.history-rep-red {
+    color:#dc2626;
+    font-weight:800;
+}
+.history-rep-separator {
+    color:var(--text-muted);
+    font-weight:500;
+}
