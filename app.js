@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.4';
+const APP_VERSION = 'v41.5';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -247,7 +247,12 @@ const Coach = {
             if (exData && exData.sets && exData.sets.length > 0) {
                 const date = new Date(hist[i].date).toLocaleDateString(undefined, {month:'numeric', day:'numeric'});
                 const weight = exData.sets[0].weight;
-                const repsStr = exData.sets.map(s => s.reps).join(' x ');
+                const repsStr = exData.sets.map(s => {
+                    const reps = Number(s.reps) || 0;
+                    const rir = Number(s.rir);
+                    const cls = rir >= 3 ? 'history-rep-green' : (rir === 2 ? 'history-rep-yellow' : 'history-rep-red');
+                    return `<span class="${cls}" title="RIR ${Number.isFinite(rir) ? rir : 0}">${reps}</span>`;
+                }).join(' <span class="history-rep-separator">x</span> ');
                 found.push(`${date}: ${weight}lbs x ${repsStr}`);
             }
             if (found.length >= 2) break;
