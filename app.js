@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'strengthOS_data_v4'; // Stable key: never bump this for app releases.
 const DRAFT_KEY = 'strengthOS_active_draft';
 const SCHEMA_VERSION = 5;
-const APP_VERSION = 'v41.5';
+const APP_VERSION = 'v41.6';
 
 // --- 1. EXERCISE LIBRARY (Adapted for 3-Day Plan) ---
 const DEFAULT_EXERCISES = [
@@ -363,7 +363,7 @@ Coach.getProgressCutoff = function(months) {
     return cutoff;
 };
 
-Coach.getStrengthSeries = function(exId, months = 1) {
+Coach.getPerformanceSeries = function(exId, months = 1) {
     const cutoff = Coach.getProgressCutoff(months);
     return Store.data.history
         .filter(session => new Date(session.date) >= cutoff)
@@ -371,14 +371,27 @@ Coach.getStrengthSeries = function(exId, months = 1) {
             const ex = Array.isArray(session.exercises) ? session.exercises.find(e => e.id === exId) : null;
             if (!ex || !Array.isArray(ex.sets)) return null;
 
-            // Only count weight from sets where reps were actually logged.
-            // This prevents an unused/default workout weight from becoming progress data.
             const performedSets = ex.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
             if (!performedSets.length) return null;
 
+            // Combine load and reps into one performance value using the Epley relationship.
+            // This value is used only to calculate relative progress; it is never displayed as a lifted weight.
+            const scoreFor = s => Number(s.weight) * (1 + (Number(s.reps) / 30));
+
+            // For Myo-Reps, prefer the activation set (set 2) when it was completed,
+            // so warm-up or mini-set structure does not distort the comparison.
+            let representativeSet = null;
+            if (ex.mode === 'myo' && ex.sets[1] && Number(ex.sets[1].weight) > 0 && Number(ex.sets[1].reps) > 0) {
+                representativeSet = ex.sets[1];
+            } else {
+                representativeSet = performedSets.reduce((best, s) => scoreFor(s) > scoreFor(best) ? s : best, performedSets[0]);
+            }
+
             return {
                 date: session.date,
-                value: Math.max(...performedSets.map(s => Number(s.weight)))
+                value: scoreFor(representativeSet),
+                weight: Number(representativeSet.weight),
+                reps: Number(representativeSet.reps)
             };
         })
         .filter(Boolean)
@@ -388,7 +401,7 @@ Coach.getStrengthSeries = function(exId, months = 1) {
 Coach.getExerciseProgress = function(months = 1) {
     return Store.data.exercises
         .map(ex => {
-            const series = Coach.getStrengthSeries(ex.id, months);
+            const series = Coach.getPerformanceSeries(ex.id, months);
             if (series.length < 2) return null;
             const first = series[0].value;
             const latest = series[series.length - 1].value;
@@ -399,6 +412,8 @@ Coach.getExerciseProgress = function(months = 1) {
                 muscle: ex.muscle,
                 first,
                 latest,
+                firstSet: { weight: series[0].weight, reps: series[0].reps },
+                latestSet: { weight: series[series.length - 1].weight, reps: series[series.length - 1].reps },
                 pct: ((latest - first) / first) * 100,
                 sessions: series.length,
                 series
@@ -871,7 +886,7 @@ const UI = {
                 </div>
                 <div class="card">
                     <h2>Muscle Group Progress</h2>
-                    <p class="progress-note">This view uses changes in your actual logged working weights. It does not measure muscle size.</p>
+                    <p class="progress-note">This view combines completed working-set weight and reps into one relative performance measure. It does not measure muscle size.</p>
                 </div>`;
             return;
         }
@@ -910,7 +925,7 @@ const UI = {
             ${toggleHtml}
             <div class="progress-summary-grid">
                 <div class="progress-stat-card">
-                    <span>Typical Weight Change</span>
+                    <span>Typical Performance Change</span>
                     <strong class="${overallPct === null ? '' : (overallPct >= 0 ? 'positive' : 'negative')}">${overallPct === null ? '—' : `${overallPct > 0 ? '+' : ''}${overallPct.toFixed(1)}%`}</strong>
                     <small>Median across tracked non-leg exercises</small>
                 </div>
@@ -943,11 +958,11 @@ const UI = {
                     </div>
                 </div>
                 <div class="muscle-progress-list">${muscleHtml || '<p class="progress-empty">More repeated exercise data is needed.</p>'}</div>
-                <p class="progress-note">Leg exercises are excluded from summary and grouped calculations. Individual leg exercises remain available in Strength Progress. Muscle Group Progress reflects working-weight changes, not measured muscle size or hypertrophy.</p>
+                <p class="progress-note">Leg exercises are excluded from summary and grouped calculations. Individual leg exercises remain available in Performance Progress. Muscle Group Progress reflects combined weight-and-rep performance changes, not measured muscle size or hypertrophy.</p>
             </div>
 
             <div class="progress-method">
-                Progress compares the earliest completed working weight with the latest completed working weight inside the selected time period. Sets with zero reps are excluded.
+                Progress compares the earliest and latest qualifying performance inside the selected time period using both logged weight and reps. Sets with zero reps are excluded. The underlying performance value is used only for relative change and is never displayed as a lifted weight.
             </div>
         `;
 
@@ -975,16 +990,18 @@ const UI = {
 
         const series = item.series;
         const w = 520, h = 190, padX = 24, padY = 28;
-        const values = series.map(d => d.value);
+        const baseline = series[0].value;
+        const indexed = series.map(d => ({...d, index: baseline > 0 ? (d.value / baseline) * 100 : 100}));
+        const values = indexed.map(d => d.index);
         let min = Math.min(...values);
         let max = Math.max(...values);
         if (min === max) { min = Math.max(0, min - 5); max += 5; }
         const range = Math.max(1, max - min);
-        const xFor = i => series.length === 1 ? w / 2 : padX + (i / (series.length - 1)) * (w - padX * 2);
+        const xFor = i => indexed.length === 1 ? w / 2 : padX + (i / (indexed.length - 1)) * (w - padX * 2);
         const yFor = v => h - padY - ((v - min) / range) * (h - padY * 2);
-        const points = series.map((d,i) => `${xFor(i)},${yFor(d.value)}`).join(' ');
-        const dots = series.map((d,i) => `
-            <circle cx="${xFor(i)}" cy="${yFor(d.value)}" r="4" class="progress-chart-dot"></circle>
+        const points = indexed.map((d,i) => `${xFor(i)},${yFor(d.index)}`).join(' ');
+        const dots = indexed.map((d,i) => `
+            <circle cx="${xFor(i)}" cy="${yFor(d.index)}" r="4" class="progress-chart-dot"></circle>
         `).join('');
 
         const firstDate = new Date(series[0].date).toLocaleDateString(undefined, {month:'short', day:'numeric'});
@@ -992,21 +1009,21 @@ const UI = {
         const sign = item.pct > 0 ? '+' : '';
 
         detail.innerHTML = `
-            <div class="strength-detail-head">
+            <div class="strength-detail-head performance-detail-head">
                 <div>
-                    <span>Then</span>
-                    <strong>${item.first.toFixed(1)} lb</strong>
+                    <span>Starting Set</span>
+                    <strong>${item.firstSet.weight} lb × ${item.firstSet.reps}</strong>
                     <small>${firstDate}</small>
                 </div>
                 <div class="strength-change ${item.pct >= 0 ? 'positive' : 'negative'}">${sign}${item.pct.toFixed(1)}%</div>
                 <div>
-                    <span>Now</span>
-                    <strong>${item.latest.toFixed(1)} lb</strong>
+                    <span>Current Set</span>
+                    <strong>${item.latestSet.weight} lb × ${item.latestSet.reps}</strong>
                     <small>${latestDate}</small>
                 </div>
             </div>
             <div class="progress-chart-wrap">
-                <svg class="progress-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Working weight trend">
+                <svg class="progress-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Relative performance trend combining weight and reps">
                     <line x1="${padX}" y1="${h-padY}" x2="${w-padX}" y2="${h-padY}" class="progress-chart-axis"></line>
                     <polyline points="${points}" class="progress-chart-line"></polyline>
                     ${dots}
@@ -1017,6 +1034,7 @@ const UI = {
                 <span>${series.length} workouts</span>
                 <span>${latestDate}</span>
             </div>
+            <p class="progress-note">Trend is indexed to your first qualifying performance in this period. The displayed percentage combines weight and reps; it is not an estimated lifted weight.</p>
         `;
     },
 
